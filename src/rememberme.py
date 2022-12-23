@@ -41,16 +41,21 @@ def parse_rg_output(output: str) -> dict[str, list]:
     return by_file
 
 
+def pad_line_number(number: str, max_digits: int) -> str:
+    return number + " " * (max_digits - len(number))
+
+
 # TODO colorful + emojis
 def print_parsed_output(by_file: dict[str, list]) -> None:
     files = sorted(by_file)
     for file in files:
         print(f"\n{file}")
         contents = by_file[file]
+        max_n_digits = max(len(content[0]) for content in contents)
         for content in contents:
             git_blame = Text("git user")
             line = (
-                content[0] + ": " + emojify(boldify(re.sub(INLINE_REGEX, "", content[1]).strip()))
+                pad_line_number(content[0], max_n_digits) + ": " + emojify(boldify(re.sub(INLINE_REGEX, "", content[1]).strip()))
             )
             columns = Columns([line, git_blame], width=console.width // 2 - 1, expand=True)
             print(columns)
