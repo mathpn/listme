@@ -14,8 +14,11 @@ from rich.console import Console
 from rich.text import Text
 
 TAGS = ["TODO", "FIXME", "XXX", "NOTE", "BUG", "OPTIMIZE"]
-REGEX = f"({'|'.join(TAGS)}) "
-INLINE_REGEX = "^(#+|//+|<!--|--|/\*|\"\"\")|-->$"
+REGEX = "^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s*)*.*" + f"[^\"'`]({'|'.join(TAGS)})[\ss:;-](.*)" + "(?:-->|#\}\}|\*\/|--\}\}|\}\}|#+|#\}|\"\"\"|''')*$"
+REGEX_TAGS = f"({'|'.join(TAGS)})"
+INLINE_REGEX = "^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s?)*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
+
+
 console = Console()
 
 
@@ -67,7 +70,7 @@ def main():
     args = parser.parse_args()
 
     # TODO better regex
-    rg_output = subprocess.check_output(["./bin/rg", REGEX, args.folder, "-n"])
+    rg_output = subprocess.check_output(["./bin/rg", REGEX, args.folder, "-n", "--pcre2"])
     rg_output = rg_output.decode("utf-8")
     by_file = parse_rg_output(rg_output)
     print_parsed_output(by_file)
