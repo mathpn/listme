@@ -14,9 +14,15 @@ from rich.console import Console
 from rich.text import Text
 
 TAGS = ["TODO", "FIXME", "XXX", "NOTE", "BUG", "OPTIMIZE"]
-REGEX = "^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s*)*.*" + f"[^\"'`]({'|'.join(TAGS)})[\ss:;-](.*)" + "(?:-->|#\}\}|\*\/|--\}\}|\}\}|#+|#\}|\"\"\"|''')*$"
+REGEX = (
+    "^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s*)*.*"
+    + f"[^\"'`]({'|'.join(TAGS)})[\ss:;-](.*)"
+    + "(?:-->|#\}\}|\*\/|--\}\}|\}\}|#+|#\}|\"\"\"|''')*$"
+)
 REGEX_TAGS = f"({'|'.join(TAGS)})"
-INLINE_REGEX = "^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s?)*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
+INLINE_REGEX = (
+    "^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s?)*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
+)
 
 
 console = Console()
@@ -36,7 +42,7 @@ def parse_rg_output(output: str) -> dict[str, list]:
     lines = output.splitlines()
     by_file = defaultdict(list)
     for line in lines:
-        match = re.search("(.*):(.*):(.*)", line)
+        match = re.search("(.*):([0-9]*):(.*)", line)
         if not match:
             continue
         file, *content = match.groups()
@@ -55,10 +61,21 @@ def print_parsed_output(by_file: dict[str, list]) -> None:
         print(f"\n{file}")
         contents = by_file[file]
         max_n_digits = max(len(content[0]) for content in contents)
-        for content in contents:
+        for line_n, text in contents:
+            matches = re.match(REGEX, text)
+            if not matches:
+                raise ValueError(f"something went wrong! -> {text}")  # FIXME remove this
+            groups = matches.groups()
+            if len(groups) != 2:
+                raise ValueError(f"something went wrong! -> {text}: {groups}")  # FIXME remove this
+            tag, txt = groups
             git_blame = Text("git user")
             line = (
-                pad_line_number(content[0], max_n_digits) + ": " + emojify(boldify(re.sub(INLINE_REGEX, "", content[1]).strip()))
+                pad_line_number(line_n, max_n_digits)
+                + ": "
+                + emojify(boldify(tag))
+                + ": "
+                + re.sub(INLINE_REGEX, "", txt).strip()
             )
             columns = Columns([line, git_blame], width=console.width // 2 - 1, expand=True)
             print(columns)
@@ -69,7 +86,6 @@ def main():
     parser.add_argument("folder", nargs="?", type=str, default=os.getcwd())
     args = parser.parse_args()
 
-    # TODO better regex
     rg_output = subprocess.check_output(["./bin/rg", REGEX, args.folder, "-n", "--pcre2"])
     rg_output = rg_output.decode("utf-8")
     by_file = parse_rg_output(rg_output)
