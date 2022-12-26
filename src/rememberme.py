@@ -7,29 +7,57 @@ import os
 import re
 import subprocess
 
-from rich import print
 from rich.columns import Columns
 from rich.console import Console
 from rich.padding import Padding
-from rich.text import Text
+from rich.panel import Panel
 
 from git_tools import blame_lines
 
 INLINE_REGEX = (
-    "^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s?)*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
+    r"^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s?)*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
 )
-
-
-console = Console()
+console = Console(highlight=False)
 
 
 def boldify(string: str) -> str:
     return f"[bold]{string}[/bold]"
 
 
-# XXX this is just temporary
-def emojify(string: str) -> str:
-    return ":no_entry: " + string
+def colorize(string: str, tag: str) -> str:
+    if tag == "TODO":
+        return f"[magenta]{string}[/magenta]"
+    if tag == "XXX":
+        return f"[black on yellow]{string}[/black on yellow]"
+    if tag == "FIXME":
+        return f"[red]{string}[/red]"
+    if tag == "OPTIMIZE":
+        return f"[blue]{string}[/blue]"
+    if tag == "BUG":
+        return f"[white on red]{string}[/white on red]"
+    if tag == "NOTE":
+        return f"[green]{string}[/green]"
+    if tag == "HACK":
+        return f"[yellow]{string}[/yellow]"
+    return string
+
+
+def emojify(tag: str) -> str:
+    if tag == "TODO":
+        return "✓ TODO"
+    if tag == "XXX":
+        return "✘ XXX"
+    if tag == "FIXME":
+        return "⚠ FIXME"
+    if tag == "OPTIMIZE":
+        return " OPTIMIZE"
+    if tag == "BUG":
+        return "☢ BUG"
+    if tag == "NOTE":
+        return "✐ NOTE"
+    if tag == "HACK":
+        return "✄ HACK"
+    return "⚠ " + tag
 
 
 def parse_rg_output(output: str) -> dict[str, list]:
@@ -51,19 +79,48 @@ def parse_rg_output(output: str) -> dict[str, list]:
 
 
 def pad_line_number(number: str, max_digits: int) -> str:
-    return number + " " * (max_digits - len(number))
+    return "\[Line " + " " * (max_digits - len(number)) + number + "]"
+    # return " " * (max_digits - len(number)) + number
 
 
-def prettify_summary(file_summary: dict[str, int], padding: int = 0) -> str:
+def prettify_summary(file_summary: dict[str, int]) -> str:
     return Padding(
-        " ".join(
-            f"{emojify(boldify(tag))}: {count}" for tag, count in file_summary.items() if count > 0
+        Panel(
+            " ".join(
+                colorize(f" {boldify(emojify(tag))}: {count} ", tag)
+                for tag, count in file_summary.items()
+                if count > 0
+            ),
+            expand=False,
         ),
-        pad=(0, 0, 0, padding + 2),
+        pad=(0, 0, 0, 2),
     )
 
 
-# TODO colorful + emojis
+def prettify_summary_bw(file_summary: dict[str, int]) -> str:
+    return Padding(
+        Panel(
+            " ".join(
+                f" {boldify(emojify(tag))}: {count} "
+                for tag, count in file_summary.items()
+                if count > 0
+            ),
+            expand=False,
+        ),
+        pad=(0, 0, 0, 2),
+    )
+
+
+def stylize_filename(file: str, n_lines: int, style: str):
+    if style == "full":
+        return (
+            f"\n[bold cyan]• {file}[/bold cyan] [bright_white]({n_lines} comments):[/bright_white]"
+        )
+    if style == "bw":
+        return f"\n[bold]• {file}[/bold] ({n_lines} comments):"  # XXX same
+    return f"\n{file}"
+
+
 def print_parsed_output(
     by_file: dict[str, list], tags: list[str], regex: re.Pattern, args: argparse.Namespace
 ) -> None:
@@ -76,7 +133,8 @@ def print_parsed_output(
         texts = contents["texts"]
         blames = blame_lines(file, list(map(int, lines)))
         max_digits = max(len(line_n) for line_n in lines)
-        print(f"\n{file} ({len(lines)} comments):")
+        filename_line = stylize_filename(file, len(lines), args.style)
+        console.print(filename_line)
         for i, text in enumerate(texts):
             matches = re.search(regex, text)
             if not matches:
@@ -87,27 +145,46 @@ def print_parsed_output(
             tag, txt = groups
             tag_counter[tag] += 1
             git_author, git_date = blames[i]
-            line = (
-                pad_line_number(lines[i], max_digits)
-                + ": "
-                + emojify(boldify(tag))
-                + ": "
-                + re.sub(INLINE_REGEX, "", txt).strip()  # FIXME deactivate auto-highlighting
-            )
+            if args.style == "plain":
+                line = re.sub(INLINE_REGEX, "", txt).strip()
+                git_author = ""
+            elif args.style == "bw":
+                text = (
+                    " " + boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " "
+                )
+                line = "  " + pad_line_number(lines[i], max_digits) + " " + text
+            else:
+                text = colorize(
+                    " "
+                    + boldify(emojify(tag))
+                    + ": "
+                    + re.sub(INLINE_REGEX, "", txt).strip()
+                    + " ",
+                    tag,
+                )
+                git_author = colorize(git_author, tag)
+                line = "  " + pad_line_number(lines[i], max_digits) + " " + text
             columns = Columns([line, git_author], width=console.width // 2 - 1, expand=True)
             print_lines.append(columns)
-        if args.summary:
-            print(prettify_summary(tag_counter, padding=max_digits))
+        if len(lines) >= args.min_summary_count and args.summary:
+            if args.style == "full":
+                console.print(prettify_summary(tag_counter))
+            elif args.style == "bw":
+                console.print(prettify_summary_bw(tag_counter))
         for line in print_lines:
-            print(line)
+            console.print(line)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("folder", nargs="?", type=str, default=os.getcwd())
     parser.add_argument(
-        "--tags", "-T", nargs="+", default=["TODO", "FIXME", "XXX", "NOTE", "BUG", "OPTIMIZE"]
+        "--tags",
+        "-T",
+        nargs="+",
+        default=["BUG", "FIXME", "XXX", "TODO", "HACK", "OPTIMIZE", "NOTE"],
     )
+    parser.add_argument("--min-summary-count", type=int, default=3)
     summary_group = parser.add_mutually_exclusive_group()
     summary_group.add_argument(
         "--summary", "-s", action="store_const", dest="summary", const=True, default=True
@@ -115,9 +192,15 @@ def main():
     summary_group.add_argument(
         "--no-summary", "-S", action="store_const", dest="summary", const=False
     )
+    style_group = parser.add_mutually_exclusive_group()
+    style_group.add_argument(
+        "--full", action="store_const", dest="style", const="full", default="full"
+    )
+    style_group.add_argument("--bw", "-b", action="store_const", dest="style", const="bw")
+    style_group.add_argument("--plain", "-p", action="store_const", dest="style", const="plain")
     args = parser.parse_args()
 
-    TAGS = sorted(args.tags)
+    TAGS = args.tags
     # pcre2
     REGEX = re.compile(
         "^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s*)*\s*"
@@ -131,7 +214,7 @@ def main():
     )
 
     rg_output = subprocess.check_output(["./bin/rg", RG_REGEX, args.folder, "-n"])
-    # print(" ".join(["./bin/rg", RG_REGEX, args.folder, "-n"]))
+    # console.print(" ".join(["./bin/rg", RG_REGEX, args.folder, "-n"]))
     rg_output = rg_output.decode("utf-8")
     by_file = parse_rg_output(rg_output)
     print_parsed_output(by_file, TAGS, REGEX, args)
