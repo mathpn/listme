@@ -3,14 +3,15 @@ Draft of main script. This uses ripgrep on the background for speed.
 """
 
 import argparse
+from datetime import datetime, timedelta
 import os
 import re
 import subprocess
 
-from rich.columns import Columns
 from rich.console import Console
 from rich.padding import Padding
 from rich.panel import Panel
+from rich.table import Table
 
 from git_tools import blame_lines
 
@@ -121,6 +122,16 @@ def stylize_filename(file: str, n_lines: int, style: str):
     return f"\n{file}"
 
 
+def tag_git_author(git_author: str, git_date: datetime, tag: str, age_limit: int, bw: bool = False) -> str:
+    if git_date < datetime.now() - timedelta(days=age_limit):
+        git_author = f"☠ OLD {git_author}"
+        if bw:
+            return f"[bold] {git_author} [/]"
+        else:
+            return f"[bold black on red] {git_author} [/]"
+    return colorize(git_author, tag)
+
+
 def print_parsed_output(
     by_file: dict[str, list], tags: list[str], regex: re.Pattern, args: argparse.Namespace
 ) -> None:
@@ -152,7 +163,7 @@ def print_parsed_output(
                 text = (
                     " " + boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " "
                 )
-                line = "  " + pad_line_number(lines[i], max_digits) + " " + text
+                git_author = tag_git_author(git_author, git_date, args.age_limit, bw=True)
             else:
                 text = colorize(
                     " "
@@ -166,6 +177,7 @@ def print_parsed_output(
                 line = "  " + pad_line_number(lines[i], max_digits) + " " + text
             columns = Columns([line, git_author], width=console.width // 2 - 1, expand=True)
             print_lines.append(columns)
+                git_author = tag_git_author(git_author, git_date, tag, args.age_limit)
         if len(lines) >= args.min_summary_count and args.summary:
             if args.style == "full":
                 console.print(prettify_summary(tag_counter))
