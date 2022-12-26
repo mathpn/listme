@@ -80,7 +80,7 @@ def parse_rg_output(output: str) -> dict[str, list]:
 
 
 def pad_line_number(number: str, max_digits: int) -> str:
-    return "\[Line " + " " * (max_digits - len(number)) + number + "]"
+    return "\[Line " + " " * (max_digits - len(number)) + number + "] "
     # return " " * (max_digits - len(number)) + number
 
 
@@ -173,11 +173,18 @@ def print_parsed_output(
                     + " ",
                     tag,
                 )
-                git_author = colorize(git_author, tag)
-                line = "  " + pad_line_number(lines[i], max_digits) + " " + text
-            columns = Columns([line, git_author], width=console.width // 2 - 1, expand=True)
-            print_lines.append(columns)
                 git_author = tag_git_author(git_author, git_date, tag, args.age_limit)
+
+            if args.author:
+                grid = Table.grid(expand=False, pad_edge=True)
+                grid.add_column(justify="left", width=max_digits + 8)
+                grid.add_column(justify="left", width=console.width // 2 - max_digits)
+                grid.add_column(justify="left")
+                grid.add_row(pad_line_number(lines[i], max_digits), text, git_author)
+                grid = Padding(grid, (0, 0, 0, 2))
+            else:
+                grid = line
+            print_lines.append(grid)
         if len(lines) >= args.min_summary_count and args.summary:
             if args.style == "full":
                 console.print(prettify_summary(tag_counter))
@@ -197,6 +204,18 @@ def main():
         default=["BUG", "FIXME", "XXX", "TODO", "HACK", "OPTIMIZE", "NOTE"],
     )
     parser.add_argument("--min-summary-count", type=int, default=3)
+    parser.add_argument(
+        "--age-limit",
+        "-l",
+        type=int,
+        default=60,
+        help="Age limit for comments. Comments older than this limit are marked.",
+    )
+    author_group = parser.add_mutually_exclusive_group()
+    author_group.add_argument(
+        "--author", "-a", action="store_const", dest="author", const=True, default=True
+    )
+    author_group.add_argument("--no-author", "-A", action="store_const", dest="author", const=False)
     summary_group = parser.add_mutually_exclusive_group()
     summary_group.add_argument(
         "--summary", "-s", action="store_const", dest="summary", const=True, default=True
