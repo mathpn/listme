@@ -61,6 +61,7 @@ def emojify(tag: str) -> str:
     return "⚠ " + tag
 
 
+# FIXME when 1 file is provided, the parsing doesn't work due to missing filename
 def parse_rg_output(output: str) -> dict[str, list]:
     lines = output.splitlines()
     by_file = {}
@@ -234,18 +235,18 @@ def main():
     TAGS = args.tags
     # pcre2
     REGEX = re.compile(
-        "^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s*)*\s*"
+        "^.*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s*)*\s*"
         + f"(?:^|\\b)({'|'.join(TAGS)})[\s:;-]+(.+?)"
         + "(?=$|-->|#\}\}|\*\/|--\}\}|\}\}|#+|#\}|\"\"\"|''')"
     )
     RG_REGEX = (
-        "^\s*(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')\s*)*\s*"
+        "^.*(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')\s*)*\s*"
         + f"(?:^|\\b)({'|'.join(TAGS)})[\s:;-]+(.+?)"
         + "(?:$|-->|#\}\}|\*/|--\}\}|\}\}|#+|#\}|\"\"\"|''')"
     )
 
+    #console.print(" ".join(["./bin/rg", RG_REGEX, args.folder, "-n"]))
     rg_output = subprocess.check_output(["./bin/rg", RG_REGEX, args.folder, "-n"])
-    # console.print(" ".join(["./bin/rg", RG_REGEX, args.folder, "-n"]))
     rg_output = rg_output.decode("utf-8")
     by_file = parse_rg_output(rg_output)
     print_parsed_output(by_file, TAGS, REGEX, args)
