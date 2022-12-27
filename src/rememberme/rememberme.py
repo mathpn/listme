@@ -13,7 +13,7 @@ from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 
-from git_tools import blame_lines
+from rememberme.git_tools import blame_lines
 
 INLINE_REGEX = (
     r"^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s?)*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
@@ -136,10 +136,10 @@ def print_parsed_file(
     for i, text in enumerate(texts):
         matches = re.search(regex, text)
         if not matches:
-            raise ValueError(f"something went wrong! -> {text}")  # FIXME remove this
+            raise ParsingError(f"the following line could not be parsed:\n{text}")
         groups = matches.groups()
         if len(groups) != 2:
-            raise ValueError(f"something went wrong! -> {text}: {groups}")  # FIXME remove this
+            raise ParsingError(f"the following line could not be parsed:\n{text}")
         tag, txt = groups
         tag_counter[tag] += 1
         git_author, git_date = blames[i]
