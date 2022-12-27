@@ -21,6 +21,10 @@ INLINE_REGEX = (
 console = Console(highlight=False)
 
 
+class ParsingError(Exception):
+    pass
+
+
 def boldify(string: str) -> str:
     return f"[bold]{string}[/bold]"
 
@@ -86,9 +90,7 @@ def pad_line_number(number: str, max_digits: int) -> str:
 
 def prettify_summary(file_summary: dict[str, int], bw: bool = False) -> str:
     summary = (
-        f" {boldify(emojify(tag))}: {count} "
-        for tag, count in file_summary.items()
-        if count > 0
+        f" {boldify(emojify(tag))}: {count} " for tag, count in file_summary.items() if count > 0
     )
     if not bw:
         summary = (colorize(string, tag) for string, tag in zip(summary, file_summary))
@@ -120,62 +122,57 @@ def tag_git_author(
     return f" {colorize(f'[{git_author}]', tag)} "
 
 
-def print_parsed_output(
-    by_file: dict[str, list], tags: list[str], regex: re.Pattern, args: argparse.Namespace
-) -> None:
-    files = sorted(by_file)
-    # TODO loop over function calls
-    for file in files:
-        print_lines = []
-        tag_counter = {tag: 0 for tag in tags}
-        contents = by_file[file]
-        lines = contents["lines"]
-        texts = contents["texts"]
-        blames = blame_lines(file, list(map(int, lines)))
-        max_digits = max(len(line_n) for line_n in lines)
-        filename_line = stylize_filename(file, len(lines), args.style)
-        console.print(filename_line)
-        for i, text in enumerate(texts):
-            matches = re.search(regex, text)
-            if not matches:
-                raise ValueError(f"something went wrong! -> {text}")  # FIXME remove this
-            groups = matches.groups()
-            if len(groups) != 2:
-                raise ValueError(f"something went wrong! -> {text}: {groups}")  # FIXME remove this
-            tag, txt = groups
-            tag_counter[tag] += 1
-            git_author, git_date = blames[i]
-            if args.style == "plain":
-                text = re.sub(INLINE_REGEX, "", txt).strip()
-                git_author = ""
-            elif args.style == "bw":
-                text = boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " "
-                git_author = tag_git_author(git_author, git_date, tag, args.age_limit, bw=True)
-            else:
-                text = colorize(
-                    boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " ",
-                    tag,
-                )
-                git_author = tag_git_author(git_author, git_date, tag, args.age_limit)
+def print_parsed_file(
+    file: str, contents: dict, tags: list[str], regex: re.Pattern, args: argparse.Namespace
+):
+    print_lines = []
+    tag_counter = {tag: 0 for tag in tags}
+    lines = contents["lines"]
+    texts = contents["texts"]
+    blames = blame_lines(file, list(map(int, lines)))
+    max_digits = max(len(line_n) for line_n in lines)
+    filename_line = stylize_filename(file, len(lines), args.style)
+    console.print(filename_line)
+    for i, text in enumerate(texts):
+        matches = re.search(regex, text)
+        if not matches:
+            raise ValueError(f"something went wrong! -> {text}")  # FIXME remove this
+        groups = matches.groups()
+        if len(groups) != 2:
+            raise ValueError(f"something went wrong! -> {text}: {groups}")  # FIXME remove this
+        tag, txt = groups
+        tag_counter[tag] += 1
+        git_author, git_date = blames[i]
+        if args.style == "plain":
+            text = re.sub(INLINE_REGEX, "", txt).strip()
+            git_author = ""
+        elif args.style == "bw":
+            text = boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " "
+            git_author = tag_git_author(git_author, git_date, tag, args.age_limit, bw=True)
+        else:
+            text = colorize(
+                boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " ",
+                tag,
+            )
+            git_author = tag_git_author(git_author, git_date, tag, args.age_limit)
 
-            grid = Table.grid(expand=False, pad_edge=True)
-            grid.add_column(justify="left", width=max_digits + 8)
-            grid.add_column(justify="left", width=console.width // 2 - max_digits)
-            if args.author:
-                grid.add_column(justify="left")
-                grid.add_row(pad_line_number(lines[i], max_digits), text, git_author)
-            else:
-                grid.add_row(pad_line_number(lines[i], max_digits), text)
-            grid = Padding(grid, (0, 0, 0, 2))
-            print_lines.append(grid)
-        #if len(lines) >= args.min_summary_count and args.summary:
-        if sum(count > 0 for count in tag_counter.values()) > 1 and args.summary:
-            if args.style == "full":
-                console.print(prettify_summary(tag_counter))
-            elif args.style == "bw":
-                console.print(prettify_summary(tag_counter, bw=True))
-        for line in print_lines:
-            console.print(line)
+        grid = Table.grid(expand=False, pad_edge=True)
+        grid.add_column(justify="left", width=max_digits + 8)
+        grid.add_column(justify="left", width=console.width // 2 - max_digits)
+        if args.author:
+            grid.add_column(justify="left")
+            grid.add_row(pad_line_number(lines[i], max_digits), text, git_author)
+        else:
+            grid.add_row(pad_line_number(lines[i], max_digits), text)
+        grid = Padding(grid, (0, 0, 0, 2))
+        print_lines.append(grid)
+    if sum(count > 0 for count in tag_counter.values()) > 1 and args.summary:
+        if args.style == "full":
+            console.print(prettify_summary(tag_counter))
+        elif args.style == "bw":
+            console.print(prettify_summary(tag_counter, bw=True))
+    for line in print_lines:
+        console.print(line)
 
 
 def main():
@@ -232,11 +229,16 @@ def main():
     cmd = ["rg", REGEX, args.folder, "-n"]
     if args.glob:
         cmd.extend(["-g", args.glob])
-    # console.print(" ".join(cmd))
-    rg_output = subprocess.check_output(cmd)
-    rg_output = rg_output.decode("utf-8")
+    console.print(" ".join(cmd))
+    process_out = subprocess.run(cmd, capture_output=True)
+    rg_error = process_out.stderr.decode("utf-8")
+    if rg_error:
+        raise ParsingError(f"ripgrep search failed: {rg_error}")
+
+    rg_output = process_out.stdout.decode("utf-8")
     by_file = parse_rg_output(rg_output)
-    print_parsed_output(by_file, TAGS, REGEX, args)
+    for file in sorted(by_file):
+        print_parsed_file(file, by_file[file], TAGS, REGEX, args)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+rememberme = "rememberme.rememberme:main"
+
+[project]
+name = "rememberme"
+version = "0.1"
+authors = [
+  { name="Matheus Pedroni", email="pnmatheus@protonmail.com" },
+]
+description = "Find your FIXMEs, TODOs, XXXs..."
+readme = "README.md"
+license = { file="LICENSE" }
+dependencies = ["rich>=12.6.0"]
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
