@@ -66,7 +66,7 @@ def parse_rg_output(output: str) -> dict[str, list]:
     lines = output.splitlines()
     by_file = {}
     for line in lines:
-        match = re.findall("(.*):([0-9]*):(.*)", line)
+        match = re.findall("(.+):([0-9]+):(.*)", line)
         if not match:
             continue
         if len(match[0]) != 3:
@@ -82,35 +82,18 @@ def parse_rg_output(output: str) -> dict[str, list]:
 
 def pad_line_number(number: str, max_digits: int) -> str:
     return "\[Line " + " " * (max_digits - len(number)) + number + "] "
-    # return " " * (max_digits - len(number)) + number
 
 
-def prettify_summary(file_summary: dict[str, int]) -> str:
-    return Padding(
-        Panel(
-            " ".join(
-                colorize(f" {boldify(emojify(tag))}: {count} ", tag)
-                for tag, count in file_summary.items()
-                if count > 0
-            ),
-            expand=False,
-        ),
-        pad=(0, 0, 0, 2),
+def prettify_summary(file_summary: dict[str, int], bw: bool = False) -> str:
+    summary = (
+        f" {boldify(emojify(tag))}: {count} "
+        for tag, count in file_summary.items()
+        if count > 0
     )
+    if not bw:
+        summary = (colorize(string, tag) for string, tag in zip(summary, file_summary))
 
-
-def prettify_summary_bw(file_summary: dict[str, int]) -> str:
-    return Padding(
-        Panel(
-            " ".join(
-                f" {boldify(emojify(tag))}: {count} "
-                for tag, count in file_summary.items()
-                if count > 0
-            ),
-            expand=False,
-        ),
-        pad=(0, 0, 0, 2),
-    )
+    return Padding(Panel(" ".join(summary), expand=False), pad=(0, 0, 0, 2))
 
 
 def stylize_filename(file: str, n_lines: int, style: str):
@@ -119,24 +102,29 @@ def stylize_filename(file: str, n_lines: int, style: str):
             f"\n[bold cyan]• {file}[/bold cyan] [bright_white]({n_lines} comments):[/bright_white]"
         )
     if style == "bw":
-        return f"\n[bold]• {file}[/bold] ({n_lines} comments):"  # XXX same
+        return f"\n[bold]• {file}[/bold] ({n_lines} comments):"
     return f"\n{file}"
 
 
-def tag_git_author(git_author: str, git_date: datetime, tag: str, age_limit: int, bw: bool = False) -> str:
+def tag_git_author(
+    git_author: str, git_date: datetime, tag: str, age_limit: int, bw: bool = False
+) -> str:
+    if not git_author:
+        return ""
     if git_date < datetime.now() - timedelta(days=age_limit):
-        git_author = f"☠ OLD {git_author}"
+        git_author = f"[☠ OLD {git_author}]"
         if bw:
-            return f"[bold] {git_author} [/]"
+            return f" [bold]{git_author}[/] "
         else:
-            return f"[bold black on red] {git_author} [/]"
-    return colorize(git_author, tag)
+            return f" [bold black on red]{git_author}[/] "
+    return f" {colorize(f'[{git_author}]', tag)} "
 
 
 def print_parsed_output(
     by_file: dict[str, list], tags: list[str], regex: re.Pattern, args: argparse.Namespace
 ) -> None:
     files = sorted(by_file)
+    # TODO loop over function calls
     for file in files:
         print_lines = []
         tag_counter = {tag: 0 for tag in tags}
@@ -158,39 +146,34 @@ def print_parsed_output(
             tag_counter[tag] += 1
             git_author, git_date = blames[i]
             if args.style == "plain":
-                line = re.sub(INLINE_REGEX, "", txt).strip()
+                text = re.sub(INLINE_REGEX, "", txt).strip()
                 git_author = ""
             elif args.style == "bw":
-                text = (
-                    " " + boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " "
-                )
-                git_author = tag_git_author(git_author, git_date, args.age_limit, bw=True)
+                text = boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " "
+                git_author = tag_git_author(git_author, git_date, tag, args.age_limit, bw=True)
             else:
                 text = colorize(
-                    " "
-                    + boldify(emojify(tag))
-                    + ": "
-                    + re.sub(INLINE_REGEX, "", txt).strip()
-                    + " ",
+                    boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " ",
                     tag,
                 )
                 git_author = tag_git_author(git_author, git_date, tag, args.age_limit)
 
+            grid = Table.grid(expand=False, pad_edge=True)
+            grid.add_column(justify="left", width=max_digits + 8)
+            grid.add_column(justify="left", width=console.width // 2 - max_digits)
             if args.author:
-                grid = Table.grid(expand=False, pad_edge=True)
-                grid.add_column(justify="left", width=max_digits + 8)
-                grid.add_column(justify="left", width=console.width // 2 - max_digits)
                 grid.add_column(justify="left")
                 grid.add_row(pad_line_number(lines[i], max_digits), text, git_author)
-                grid = Padding(grid, (0, 0, 0, 2))
             else:
-                grid = line
+                grid.add_row(pad_line_number(lines[i], max_digits), text)
+            grid = Padding(grid, (0, 0, 0, 2))
             print_lines.append(grid)
-        if len(lines) >= args.min_summary_count and args.summary:
+        #if len(lines) >= args.min_summary_count and args.summary:
+        if sum(count > 0 for count in tag_counter.values()) > 1 and args.summary:
             if args.style == "full":
                 console.print(prettify_summary(tag_counter))
             elif args.style == "bw":
-                console.print(prettify_summary_bw(tag_counter))
+                console.print(prettify_summary(tag_counter, bw=True))
         for line in print_lines:
             console.print(line)
 
@@ -204,7 +187,13 @@ def main():
         nargs="+",
         default=["BUG", "FIXME", "XXX", "TODO", "HACK", "OPTIMIZE", "NOTE"],
     )
-    parser.add_argument("--min-summary-count", type=int, default=3)
+    parser.add_argument(
+        "--glob",
+        "-g",
+        type=str,
+        default=None,
+        help="glob pattern to include/exclude files in the search. Must be a quoted string. Same syntax as ripgrep.",
+    )
     parser.add_argument(
         "--age-limit",
         "-l",
@@ -233,20 +222,18 @@ def main():
     args = parser.parse_args()
 
     TAGS = args.tags
-    # pcre2
-    REGEX = re.compile(
-        "^.*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s*)*\s*"
-        + f"(?:^|\\b)({'|'.join(TAGS)})[\s:;-]+(.+?)"
-        + "(?=$|-->|#\}\}|\*\/|--\}\}|\}\}|#+|#\}|\"\"\"|''')"
-    )
-    RG_REGEX = (
-        "^.*(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')\s*)*\s*"
+    REGEX = (
+        "(?:^|(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')+\s*)+)\s*"
         + f"(?:^|\\b)({'|'.join(TAGS)})[\s:;-]+(.+?)"
         + "(?:$|-->|#\}\}|\*/|--\}\}|\}\}|#+|#\}|\"\"\"|''')"
     )
 
-    #console.print(" ".join(["./bin/rg", RG_REGEX, args.folder, "-n"]))
-    rg_output = subprocess.check_output(["./bin/rg", RG_REGEX, args.folder, "-n"])
+    # XXX requires ripgrep installation
+    cmd = ["rg", REGEX, args.folder, "-n"]
+    if args.glob:
+        cmd.extend(["-g", args.glob])
+    # console.print(" ".join(cmd))
+    rg_output = subprocess.check_output(cmd)
     rg_output = rg_output.decode("utf-8")
     by_file = parse_rg_output(rg_output)
     print_parsed_output(by_file, TAGS, REGEX, args)
