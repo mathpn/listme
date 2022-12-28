@@ -115,11 +115,10 @@ def pad_line_number(number: str, max_digits: int) -> str:
 
 def prettify_summary(file_summary: dict[str, int], bw: bool = False) -> Padding:
     """Add rich text formatting to file summary."""
-    summary = (
-        f" {boldify(emojify(tag))}: {count} " for tag, count in file_summary.items() if count > 0
-    )
+    file_summary = [(tag, count) for tag, count in file_summary.items() if count > 0]
+    summary = (f" {boldify(emojify(tag))}: {count} " for tag, count in file_summary)
     if not bw:
-        summary = (colorize(string, tag) for string, tag in zip(summary, file_summary))
+        summary = (colorize(string, tag) for string, (tag, _) in zip(summary, file_summary))
 
     return Padding(Panel(" ".join(summary), expand=False), pad=(0, 0, 0, 2))
 
