@@ -151,14 +151,20 @@ def tag_git_author(
 
 def print_parsed_file(file: str, contents: Dict, tags_regex: str, args: argparse.Namespace) -> None:
     """Print a parsed search output with rich text formatting."""
+    if not contents:
+        return
+
     print_lines = []
-    tag_counter = {tag: 0 for tag in tags}
+    tag_counter = {tag: 0 for tag in args.tags}
     lines = contents["lines"]
     texts = contents["texts"]
+
     blames = blame_lines(file, list(map(int, lines)))
     max_digits = max(len(line_n) for line_n in lines)
+    file = shorten_filepath(file, args.path, args.path_type)
     filename_line = stylize_filename(file, len(lines), args.style)
     CONSOLE.print(filename_line)
+
     for i, text in enumerate(texts):
         matches = re.search(tags_regex, text)
         if not matches:
@@ -203,6 +209,15 @@ def print_parsed_file(file: str, contents: Dict, tags_regex: str, args: argparse
         CONSOLE.print(line)
 
 
+def shorten_filepath(file_path: str, search_path: str, path_type: str) -> str:
+    """Shorten filepath depending on the chosen option."""
+    if path_type == "relative":
+        rel_path = file_path.replace(search_path, "").strip("/")
+        rel_path = rel_path if rel_path else os.path.basename(file_path)  # file search
+        return rel_path
+    return file_path
+
+
 def main():
     """Run Rememberme."""
     parser = argparse.ArgumentParser()
@@ -233,6 +248,18 @@ def main():
         default=60,
         help="Age limit for comments. Comments older than this limit are marked.",
     )
+    path_params = parser.add_mutually_exclusive_group()
+    path_params.add_argument(
+        "--relative-path",
+        "-r",
+        action="store_const",
+        dest="path_type",
+        const="relative",
+        default="relative",
+    )
+    path_params.add_argument(
+        "--full-path", "-R", action="store_const", dest="path_type", const="full"
+    )
     author_group = parser.add_mutually_exclusive_group()
     author_group.add_argument(
         "--author", "-a", action="store_const", dest="author", const=True, default=True
@@ -259,6 +286,7 @@ def main():
         + "(?:$|-->|#\}\}|\*/|--\}\}|\}\}|#+|#\}|\"\"\"|''')"
     )
 
+    args.path = os.path.abspath(args.path)
     # XXX requires ripgrep installation
     cmd = ["rg", tags_regex, args.path, "-n"]
     if args.glob:
