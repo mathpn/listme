@@ -17,7 +17,7 @@ def blame_file(file_path: str) -> list[str]:
 # TODO switch to --porcelain parsing, less error-prone
 def parse_blame(blame: str) -> tuple[str, datetime]:
     match = re.match(
-        "^.{40} .*\(\s*(.*?)\s+(\d{4}-[01]\d-[0-3]\d) [0-2]\d:[0-5]\d:[0-5]\d [+-][0-2]\d{3} .*\)",
+        r"^.{40} .*\(\s*(.*?)\s+(\d{4}-[01]\d-[0-3]\d) [0-2]\d:[0-5]\d:[0-5]\d [+-][0-2]\d{3} .*\)",
         blame,
     )
     if not match:

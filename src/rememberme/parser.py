@@ -1,5 +1,6 @@
 """
-Draft of main script. This uses ripgrep on the background for speed.
+Parser module with core rememberme functionality.
+The main function is the entry-point for running rememberme.
 """
 
 import argparse
@@ -22,14 +23,16 @@ console = Console(highlight=False)
 
 
 class ParsingError(Exception):
-    pass
+    """Parsing error exception."""
 
 
 def boldify(string: str) -> str:
+    """Turn text to bold format."""
     return f"[bold]{string}[/bold]"
 
 
 def colorize(string: str, tag: str) -> str:
+    """Colorize text based on tag."""
     if tag == "TODO":
         return f"[magenta]{string}[/magenta]"
     if tag == "XXX":
@@ -48,6 +51,7 @@ def colorize(string: str, tag: str) -> str:
 
 
 def emojify(tag: str) -> str:
+    """Prepend a unicode symbol to tags."""
     if tag == "TODO":
         return "✓ TODO"
     if tag == "XXX":
@@ -65,10 +69,10 @@ def emojify(tag: str) -> str:
     return "⚠ " + tag
 
 
-# FIXME when 1 file is provided, the parsing doesn't work due to missing filename
-def parse_rg_output(output: str) -> dict[str, list]:
+def parse_rg_output_folder(output: str) -> dict[str, dict[str, list]]:
+    """Parse ripgrep output of folder search."""
     lines = output.splitlines()
-    by_file = {}
+    by_file: dict[str, dict[str, list]] = {}
     for line in lines:
         match = re.findall("(.+):([0-9]+):(.*)", line)
         if not match:
@@ -84,11 +88,33 @@ def parse_rg_output(output: str) -> dict[str, list]:
     return by_file
 
 
+def parse_rg_output_file(output: str) -> dict[str, list]:
+    """Parse ripgrep output of file search."""
+    out: dict[str, list] = {}
+    lines = output.splitlines()
+    for line in lines:
+        match = re.findall("([0-9]+):(.*)", line)
+        if not match:
+            continue
+        if len(match[0]) != 2:
+            raise ParsingError(
+                f"ripgrep output could not be parsed: {line} -> tags_regex match = {match}"
+            )
+        line, text = match[0]
+        out.setdefault("lines", [])
+        out.setdefault("texts", [])
+        out["lines"].append(line)
+        out["texts"].append(text)
+    return out
+
+
 def pad_line_number(number: str, max_digits: int) -> str:
+    """Pad line number with spaces."""
     return "\[Line " + " " * (max_digits - len(number)) + number + "] "
 
 
-def prettify_summary(file_summary: dict[str, int], bw: bool = False) -> str:
+def prettify_summary(file_summary: dict[str, int], bw: bool = False) -> Padding:
+    """Add rich text formatting to file summary."""
     summary = (
         f" {boldify(emojify(tag))}: {count} " for tag, count in file_summary.items() if count > 0
     )
@@ -98,7 +124,8 @@ def prettify_summary(file_summary: dict[str, int], bw: bool = False) -> str:
     return Padding(Panel(" ".join(summary), expand=False), pad=(0, 0, 0, 2))
 
 
-def stylize_filename(file: str, n_lines: int, style: str):
+def stylize_filename(file: str, n_lines: int, style: str) -> str:
+    """Add rich text formatting to filename."""
     if style == "full":
         return (
             f"\n[bold cyan]• {file}[/bold cyan] [bright_white]({n_lines} comments):[/bright_white]"
@@ -111,20 +138,21 @@ def stylize_filename(file: str, n_lines: int, style: str):
 def tag_git_author(
     git_author: str, git_date: datetime, tag: str, age_limit: int, bw: bool = False
 ) -> str:
+    """Colorize and tag git author if the entry is too old."""
     if not git_author:
         return ""
     if git_date < datetime.now() - timedelta(days=age_limit):
         git_author = f"[☠ OLD {git_author}]"
         if bw:
             return f" [bold]{git_author}[/] "
-        else:
-            return f" [bold black on red]{git_author}[/] "
+        return f" [bold black on red]{git_author}[/] "
     return f" {colorize(f'[{git_author}]', tag)} "
 
 
 def print_parsed_file(
-    file: str, contents: dict, tags: list[str], regex: re.Pattern, args: argparse.Namespace
+    file: str, contents: dict, tags: list[str], tags_regex: re.Pattern, args: argparse.Namespace
 ):
+    """Print a parsed search output with rich text formatting."""
     print_lines = []
     tag_counter = {tag: 0 for tag in tags}
     lines = contents["lines"]
@@ -134,7 +162,7 @@ def print_parsed_file(
     filename_line = stylize_filename(file, len(lines), args.style)
     console.print(filename_line)
     for i, text in enumerate(texts):
-        matches = re.search(regex, text)
+        matches = re.search(tags_regex, text)
         if not matches:
             raise ParsingError(f"the following line could not be parsed:\n{text}")
         groups = matches.groups()
@@ -164,8 +192,8 @@ def print_parsed_file(
             grid.add_row(pad_line_number(lines[i], max_digits), text, git_author)
         else:
             grid.add_row(pad_line_number(lines[i], max_digits), text)
-        grid = Padding(grid, (0, 0, 0, 2))
-        print_lines.append(grid)
+        padded_grid = Padding(grid, (0, 0, 0, 2))
+        print_lines.append(padded_grid)
     if sum(count > 0 for count in tag_counter.values()) > 1 and args.summary:
         if args.style == "full":
             console.print(prettify_summary(tag_counter))
@@ -176,8 +204,15 @@ def print_parsed_file(
 
 
 def main():
+    """Run Rememberme."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("folder", nargs="?", type=str, default=os.getcwd())
+    parser.add_argument(
+        "path",
+        nargs="?",
+        type=str,
+        default=os.getcwd(),
+        help="path to folder or file to be parsed. Folder search is recursive.",
+    )
     parser.add_argument(
         "--tags",
         "-T",
@@ -218,28 +253,30 @@ def main():
     style_group.add_argument("--plain", "-p", action="store_const", dest="style", const="plain")
     args = parser.parse_args()
 
-    TAGS = args.tags
-    REGEX = (
+    tags = args.tags
+    tags_regex = (
         "(?:^|(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')+\s*)+)\s*"
-        + f"(?:^|\\b)({'|'.join(TAGS)})[\s:;-]+(.+?)"
+        + f"(?:^|\\b)({'|'.join(tags)})[\s:;-]+(.+?)"
         + "(?:$|-->|#\}\}|\*/|--\}\}|\}\}|#+|#\}|\"\"\"|''')"
     )
 
     # XXX requires ripgrep installation
-    cmd = ["rg", REGEX, args.folder, "-n"]
+    cmd = ["rg", tags_regex, args.path, "-n"]
     if args.glob:
         cmd.extend(["-g", args.glob])
-    console.print(" ".join(cmd))
+    # console.print(" ".join(cmd))
     process_out = subprocess.run(cmd, capture_output=True)
     rg_error = process_out.stderr.decode("utf-8")
     if rg_error:
         raise ParsingError(f"ripgrep search failed: {rg_error}")
 
     rg_output = process_out.stdout.decode("utf-8")
-    by_file = parse_rg_output(rg_output)
+
+    if os.path.isdir(args.path):
+        by_file = parse_rg_output_folder(rg_output)
+    else:
+        out = parse_rg_output_file(rg_output)
+        by_file = {args.path: out}
+
     for file in sorted(by_file):
-        print_parsed_file(file, by_file[file], TAGS, REGEX, args)
-
-
-if __name__ == "__main__":
-    main()
+        print_parsed_file(file, by_file[file], tags, tags_regex, args)
