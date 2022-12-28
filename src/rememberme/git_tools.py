@@ -6,16 +6,18 @@ import os
 import re
 import subprocess
 from datetime import datetime
+from typing import List, Tuple
 
 
-def blame_file(file_path: str) -> list[str]:
+def blame_file(file_path: str) -> List[str]:
     """Return the git blame output for the given file."""
     blame = subprocess.getoutput(f"cd {os.path.dirname(file_path)} && git blame {file_path} -l")
     return blame.splitlines()
 
 
 # TODO switch to --porcelain parsing, less error-prone
-def parse_blame(blame: str) -> tuple[str, datetime]:
+def parse_blame(blame: str) -> Tuple[str, datetime]:
+    """Parse a git blame output."""
     match = re.match(
         r"^.{40} .*\(\s*(.*?)\s+(\d{4}-[01]\d-[0-3]\d) [0-2]\d:[0-5]\d:[0-5]\d [+-][0-2]\d{3} .*\)",
         blame,
@@ -29,7 +31,7 @@ def parse_blame(blame: str) -> tuple[str, datetime]:
     return name.strip(), date
 
 
-def blame_lines(file_path: str, lines: list[int]) -> list[tuple[str, datetime]]:
+def blame_lines(file_path: str, lines: List[int]) -> List[Tuple[str, datetime]]:
     """Return a list of (name, datetime) for each line to be blamed."""
     blames = blame_file(file_path)
     if blames[0].startswith("fatal"):
