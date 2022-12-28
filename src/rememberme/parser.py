@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import os
 import re
 import subprocess
+from typing import Dict, List
 
 from rich.console import Console
 from rich.padding import Padding
@@ -19,7 +20,7 @@ from rememberme.git_tools import blame_lines
 INLINE_REGEX = (
     r"^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s?)*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
 )
-console = Console(highlight=False)
+CONSOLE = Console(highlight=False)
 
 
 class ParsingError(Exception):
@@ -69,7 +70,7 @@ def emojify(tag: str) -> str:
     return "⚠ " + tag
 
 
-def parse_rg_output_folder(output: str) -> dict[str, dict[str, list]]:
+def parse_rg_output_folder(output: str) -> Dict[str, Dict[str, List]]:
     """Parse ripgrep output of folder search."""
     lines = output.splitlines()
     by_file: dict[str, dict[str, list]] = {}
@@ -88,7 +89,7 @@ def parse_rg_output_folder(output: str) -> dict[str, dict[str, list]]:
     return by_file
 
 
-def parse_rg_output_file(output: str) -> dict[str, list]:
+def parse_rg_output_file(output: str) -> Dict[str, List]:
     """Parse ripgrep output of file search."""
     out: dict[str, list] = {}
     lines = output.splitlines()
@@ -113,7 +114,7 @@ def pad_line_number(number: str, max_digits: int) -> str:
     return "\[Line " + " " * (max_digits - len(number)) + number + "] "
 
 
-def prettify_summary(file_summary: dict[str, int], bw: bool = False) -> Padding:
+def prettify_summary(file_summary: Dict[str, int], bw: bool = False) -> Padding:
     """Add rich text formatting to file summary."""
     file_summary = [(tag, count) for tag, count in file_summary.items() if count > 0]
     summary = (f" {boldify(emojify(tag))}: {count} " for tag, count in file_summary)
@@ -148,9 +149,7 @@ def tag_git_author(
     return f" {colorize(f'[{git_author}]', tag)} "
 
 
-def print_parsed_file(
-    file: str, contents: dict, tags: list[str], tags_regex: re.Pattern, args: argparse.Namespace
-):
+def print_parsed_file(file: str, contents: Dict, tags_regex: str, args: argparse.Namespace) -> None:
     """Print a parsed search output with rich text formatting."""
     print_lines = []
     tag_counter = {tag: 0 for tag in tags}
@@ -159,7 +158,7 @@ def print_parsed_file(
     blames = blame_lines(file, list(map(int, lines)))
     max_digits = max(len(line_n) for line_n in lines)
     filename_line = stylize_filename(file, len(lines), args.style)
-    console.print(filename_line)
+    CONSOLE.print(filename_line)
     for i, text in enumerate(texts):
         matches = re.search(tags_regex, text)
         if not matches:
@@ -185,7 +184,7 @@ def print_parsed_file(
 
         grid = Table.grid(expand=False, pad_edge=True)
         grid.add_column(justify="left", width=max_digits + 8)
-        grid.add_column(justify="left", width=console.width // 2 - max_digits)
+        grid.add_column(justify="left", width=CONSOLE.width // 2 - max_digits)
         if args.author:
             grid.add_column(justify="left")
             grid.add_row(pad_line_number(lines[i], max_digits), text, git_author)
@@ -193,13 +192,15 @@ def print_parsed_file(
             grid.add_row(pad_line_number(lines[i], max_digits), text)
         padded_grid = Padding(grid, (0, 0, 0, 2))
         print_lines.append(padded_grid)
+
     if sum(count > 0 for count in tag_counter.values()) > 1 and args.summary:
         if args.style == "full":
-            console.print(prettify_summary(tag_counter))
+            CONSOLE.print(prettify_summary(tag_counter))
         elif args.style == "bw":
-            console.print(prettify_summary(tag_counter, bw=True))
+            CONSOLE.print(prettify_summary(tag_counter, bw=True))
+
     for line in print_lines:
-        console.print(line)
+        CONSOLE.print(line)
 
 
 def main():
@@ -252,10 +253,9 @@ def main():
     style_group.add_argument("--plain", "-p", action="store_const", dest="style", const="plain")
     args = parser.parse_args()
 
-    tags = args.tags
     tags_regex = (
         "(?:^|(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')+\s*)+)\s*"
-        + f"(?:^|\\b)({'|'.join(tags)})[\s:;-]+(.+?)"
+        + f"(?:^|\\b)({'|'.join(args.tags)})[\s:;-]+(.+?)"
         + "(?:$|-->|#\}\}|\*/|--\}\}|\}\}|#+|#\}|\"\"\"|''')"
     )
 
@@ -263,7 +263,7 @@ def main():
     cmd = ["rg", tags_regex, args.path, "-n"]
     if args.glob:
         cmd.extend(["-g", args.glob])
-    # console.print(" ".join(cmd))
+    # CONSOLE.print(" ".join(cmd))
     process_out = subprocess.run(cmd, capture_output=True)
     rg_error = process_out.stderr.decode("utf-8")
     if rg_error:
@@ -278,4 +278,4 @@ def main():
         by_file = {args.path: out}
 
     for file in sorted(by_file):
-        print_parsed_file(file, by_file[file], tags, tags_regex, args)
+        print_parsed_file(file, by_file[file], tags_regex, args)
