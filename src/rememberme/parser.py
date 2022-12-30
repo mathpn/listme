@@ -16,11 +16,13 @@ from rich.panel import Panel
 from rich.table import Table
 
 from rememberme.git_tools import AuthorInfo, blame_lines
+from rememberme.config import get_config, wizard
 
 COMMENT_REGEX = (
-    r"(?:(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')+\s*)+)\s*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
+    r"^(?:(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')+\s*)+)\s*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
 )
 CONSOLE = Console(highlight=False)
+CONFIG = get_config()
 
 
 class ParsingError(Exception):
@@ -54,6 +56,13 @@ def colorize(string: str, tag: str) -> str:
 
 
 def emojify(tag: str) -> str:
+    """Prepend a unicode symbol to tags if allowed by CONFIG."""
+    if CONFIG.get("extra_symbols"):
+        return _emojify(tag)
+    return tag
+
+
+def _emojify(tag: str) -> str:
     """Prepend a unicode symbol to tags."""
     if tag == "TODO":
         return "✓ TODO"
@@ -252,7 +261,7 @@ def main():
         nargs="?",
         type=str,
         default=os.getcwd(),
-        help="path to folder or file to be parsed. Folder search is recursive.",
+        help="Path to folder or file to be parsed. Folder search is recursive.",
     )
     parser.add_argument(
         "--tags",
@@ -265,7 +274,7 @@ def main():
         "-g",
         type=str,
         default=None,
-        help="glob pattern to include/exclude files in the search. Must be a quoted string. Same syntax as ripgrep.",
+        help="Glob pattern to include/exclude files or folders in the search. Must be a single-quoted string. Same syntax as ripgrep.",
     )
     parser.add_argument(
         "--age-limit",
@@ -309,13 +318,18 @@ def main():
 
     if not all(re.match("^(\w+)$", tag) for tag in args.tags):
         raise ValueError(
-            f"provided tags must be non-empty and contain only alphanumeric or underscore characters"
+            "provided tags must be non-empty and contain only alphanumeric or underscore characters"
         )
+
+    global CONFIG
+    if not CONFIG:
+        wizard()
+        CONFIG = get_config()
 
     tags_regex = (
         "(?:^|(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')+\s*)+)\s*"
         + f"(?:^|\\b)({'|'.join(args.tags)})[\s:;-]+(.+?)"
-        + "(?:$|-->|#\}\}|\*/|--\}\}|\}\}|#+|#\}|\"\"\"|''')"
+        + "(?:$|-->|#\}\}|\*/|--\}\}|\}\}|#+|#\}|\"\"\"|''')*$"
     )
 
     args.path = os.path.abspath(args.path)
