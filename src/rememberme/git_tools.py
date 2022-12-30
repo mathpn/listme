@@ -14,7 +14,7 @@ from typing import Dict, List, Tuple
 class AuthorInfo:
     """Minimal git author information."""
 
-    author: str = ""
+    name: str = ""
     date: datetime = datetime.today()
 
 
@@ -42,9 +42,8 @@ def parse_blame(
     elif match := re.match(author_regex, blame):
         groups = match.groups()
         if len(groups) == 1:
-            author = groups[0]
             hash_authors.setdefault(current_hash, AuthorInfo())
-            hash_authors[current_hash].author = author
+            hash_authors[current_hash].name = groups[0]
     elif match := re.match(time_regex, blame):
         groups = match.groups()
         if len(groups) == 1:
@@ -62,8 +61,8 @@ def blame_lines(file_path: str, lines: List[int]) -> List[AuthorInfo]:
     if blames[0].startswith("fatal"):
         return [default_author for _ in range(1 + max(lines))]
     cur_hash = "null"
-    lines_hash = {}
-    hash_authors = {}
+    lines_hash: Dict[int, str] = {}
+    hash_authors: Dict[str, AuthorInfo] = {}
     for blame in blames:
         cur_hash, lines_hash, hash_authors = parse_blame(blame, cur_hash, lines_hash, hash_authors)
-    return [hash_authors.get(lines_hash.get(line), default_author) for line in lines]
+    return [hash_authors.get(lines_hash.get(line, "no-hash"), default_author) for line in lines]
