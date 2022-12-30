@@ -37,21 +37,21 @@ def boldify(string: str) -> str:
 def colorize(string: str, tag: str) -> str:
     """Colorize text based on tag."""
     if tag == "TODO":
-        return f"[bright_magenta]{string}[/bright_magenta]"
+        return f"[cadet_blue]{string}[/cadet_blue]"
     if tag == "XXX":
-        return f"[black on bright_yellow]{string}[/black on bright_yellow]"
+        return f"[grey0 on gold3]{string}[/grey0 on gold3]"
     if tag == "FIXME":
-        return f"[red]{string}[/red]"
+        return f"[red1]{string}[/red1]"
     if tag == "OPTIMIZE":
-        return f"[blue]{string}[/blue]"
+        return f"[orange3]{string}[/orange3]"
     if tag == "BUG":
-        return f"[white on red]{string}[/white on red]"
+        return f"[grey93 on dark_red]{string}[/grey93 on dark_red]"
     if tag == "NOTE":
-        return f"[green]{string}[/green]"
+        return f"[dark_sea_green4]{string}[/dark_sea_green4]"
     if tag == "HACK":
-        return f"[yellow]{string}[/yellow]"
+        return f"[yellow3]{string}[/yellow3]"
     if tag == "#OLD__COMMIT":  # used to mark old comments (by commit date)
-        return f"[white on red]{string}[/white on red]"
+        return f"[grey0 on red1]{string}[/grey0 on red1]"
     return string
 
 
@@ -155,7 +155,7 @@ def stylize_filename(file: str, n_lines: int, style: str) -> str:
     if style == "plain":
         return file
     if style == "full":
-        return f"\n[bold cyan]• {file}[/bold cyan] ({n_lines} comments):"
+        return f"\n[bold deep_sky_blue3]• {file}[/bold deep_sky_blue3] ({n_lines} comments):"
     if style == "bw":
         return f"\n[bold]• {file}[/bold] ({n_lines} comments):"
     return f"\n{file}"
