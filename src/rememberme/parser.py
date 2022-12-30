@@ -17,8 +17,8 @@ from rich.table import Table
 
 from rememberme.git_tools import AuthorInfo, blame_lines
 
-INLINE_REGEX = (
-    r"^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s?)*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
+COMMENT_REGEX = (
+    r"(?:(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')+\s*)+)\s*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
 )
 CONSOLE = Console(highlight=False)
 
@@ -77,11 +77,13 @@ def parse_rg_output_folder(output: str) -> Dict[str, Dict[str, List]]:
     lines = output.splitlines()
     by_file: dict[str, dict[str, list]] = {}
     for line in lines:
-        match = re.findall("(.+):([0-9]+):(.*)", line)
+        match = re.findall("^(.+):([0-9]+):(.*)", line)
         if not match:
             continue
         if len(match[0]) != 3:
-            raise RuntimeError(f"something went wrong: {line} -> {match}")
+            raise ParsingError(
+                f"ripgrep output could not be parsed: {line} -> tags_regex match = {match}"
+            )
         file, line, text = match[0]
         by_file.setdefault(file, {})
         by_file[file].setdefault("lines", [])
@@ -96,7 +98,7 @@ def parse_rg_output_file(output: str) -> Dict[str, List]:
     out: dict[str, list] = {}
     lines = output.splitlines()
     for line in lines:
-        match = re.findall("([0-9]+):(.*)", line)
+        match = re.findall("^([0-9]+):(.*)", line)
         if not match:
             continue
         if len(match[0]) != 2:
@@ -128,24 +130,23 @@ def prettify_summary(file_summary: Dict[str, int], style: str = "full") -> Paddi
 
 def prettify_line(text: str, tag: str, style: str):
     """Add rich text formatting to comment line."""
-    if style == "plain":
-        text = re.sub(INLINE_REGEX, "", text).strip()
-    elif style == "full":
-        text = colorize(
-            boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", text).strip() + " ",
-            tag,
-        )
-    else:
-        text = boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", text).strip() + " "
+    text = re.sub(COMMENT_REGEX, "", text)
+    text = boldify(emojify(tag)) + ": " + text + " "
+    if style == "full":
+        text = colorize(text, tag)
     return text
+
+
+def get_plain_line(tag: str, text: str) -> str:
+    return f"\t{tag}: {text}"
 
 
 def stylize_filename(file: str, n_lines: int, style: str) -> str:
     """Add rich text formatting to filename."""
+    if style == "plain":
+        return file
     if style == "full":
-        return (
-            f"\n[bold cyan]• {file}[/bold cyan] [bright_white]({n_lines} comments):[/bright_white]"
-        )
+        return f"\n[bold cyan]• {file}[/bold cyan] ({n_lines} comments):"
     if style == "bw":
         return f"\n[bold]• {file}[/bold] ({n_lines} comments):"
     return f"\n{file}"
@@ -153,9 +154,7 @@ def stylize_filename(file: str, n_lines: int, style: str) -> str:
 
 def tag_git_author(author_info: AuthorInfo, tag: str, age_limit: int, style: str) -> str:
     """Colorize and tag git author if the entry is too old."""
-    if not author_info.name:
-        return ""
-    if style == "plain":
+    if not author_info.name or style == "plain":
         return ""
 
     git_author = author_info.name
@@ -163,11 +162,10 @@ def tag_git_author(author_info: AuthorInfo, tag: str, age_limit: int, style: str
         git_author = f"[bold]☠ OLD {git_author}[/bold]"
         tag = "#OLD__COMMIT"
 
+    git_author = f"[{git_author}]"
     if style == "full":
-        git_author = f" {colorize(f'[{git_author}]', tag)} "
-    else:
-        git_author = f" [{git_author}] "
-    return git_author
+        git_author = f"{colorize(git_author, tag)} "
+    return f" {git_author} "
 
 
 def log_warning(msg: str, verbose: bool = False) -> None:
@@ -212,8 +210,8 @@ def print_parsed_file(file: str, contents: Dict, tags_regex: str, args: argparse
         tag_counter[tag] += 1
 
         if args.style == "plain":
-            text = re.sub(INLINE_REGEX, "", txt).strip()
-            print_lines.append(text.strip())
+            text = get_plain_line(tag, txt)
+            print_lines.append(text)
             continue
 
         text = prettify_line(txt, tag, args.style)
@@ -308,6 +306,11 @@ def main():
     style_group.add_argument("--bw", "-b", action="store_const", dest="style", const="bw")
     style_group.add_argument("--plain", "-p", action="store_const", dest="style", const="plain")
     args = parser.parse_args()
+
+    if not all(re.match("^(\w+)$", tag) for tag in args.tags):
+        raise ValueError(
+            f"provided tags must be non-empty and contain only alphanumeric or underscore characters"
+        )
 
     tags_regex = (
         "(?:^|(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')+\s*)+)\s*"
