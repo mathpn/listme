@@ -48,6 +48,8 @@ def colorize(string: str, tag: str) -> str:
         return f"[green]{string}[/green]"
     if tag == "HACK":
         return f"[yellow]{string}[/yellow]"
+    if tag == "#OLD__COMMIT":  # used to mark old comments (by commit date)
+        return f"[black on red]{string}[/black on red]"
     return string
 
 
@@ -114,14 +116,28 @@ def pad_line_number(number: str, max_digits: int) -> str:
     return "\[Line " + " " * (max_digits - len(number)) + number + "] "
 
 
-def prettify_summary(file_summary: Dict[str, int], bw: bool = False) -> Padding:
+def prettify_summary(file_summary: Dict[str, int], style: str = "full") -> Padding:
     """Add rich text formatting to file summary."""
     file_summary = [(tag, count) for tag, count in file_summary.items() if count > 0]
     summary = (f" {boldify(emojify(tag))}: {count} " for tag, count in file_summary)
-    if not bw:
+    if style == "full":
         summary = (colorize(string, tag) for string, (tag, _) in zip(summary, file_summary))
 
     return Padding(Panel(" ".join(summary), expand=False), pad=(0, 0, 0, 2))
+
+
+def prettify_line(text: str, tag: str, style: str):
+    """Add rich text formatting to comment line."""
+    if style == "plain":
+        text = re.sub(INLINE_REGEX, "", text).strip()
+    elif style == "full":
+        text = colorize(
+            boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", text).strip() + " ",
+            tag,
+        )
+    else:
+        text = boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", text).strip() + " "
+    return text
 
 
 def stylize_filename(file: str, n_lines: int, style: str) -> str:
@@ -135,18 +151,35 @@ def stylize_filename(file: str, n_lines: int, style: str) -> str:
     return f"\n{file}"
 
 
-def tag_git_author(
-    git_author: str, git_date: datetime, tag: str, age_limit: int, bw: bool = False
-) -> str:
+def tag_git_author(author_info: AuthorInfo, tag: str, age_limit: int, style: str) -> str:
     """Colorize and tag git author if the entry is too old."""
-    if not git_author:
+    if not author_info.name:
         return ""
-    if git_date < datetime.now() - timedelta(days=age_limit):
-        git_author = f"[☠ OLD {git_author}]"
-        if bw:
-            return f" [bold]{git_author}[/] "
-        return f" [bold black on red]{git_author}[/] "
-    return f" {colorize(f'[{git_author}]', tag)} "
+    if style == "plain":
+        return ""
+
+    git_author = author_info.name
+    if author_info.date < datetime.now() - timedelta(days=age_limit):
+        git_author = f"[bold]☠ OLD {git_author}[/bold]"
+        tag = "#OLD__COMMIT"
+
+    if style == "full":
+        git_author = f" {colorize(f'[{git_author}]', tag)} "
+    else:
+        git_author = f" [{git_author}] "
+    return git_author
+
+
+def log_warning(msg: str, verbose: bool = False) -> None:
+    """Log warning if verbose is set to True."""
+    if verbose:
+        print(f"WARNING: {msg}")
+
+
+def print_summary(tag_counter: Dict[str, int], style: str):
+    """Print a file summary with rich formatting."""
+    if sum(count > 0 for count in tag_counter.values()) > 1 and style != "plain":
+        CONSOLE.print(prettify_summary(tag_counter, style=style))
 
 
 def print_parsed_file(file: str, contents: Dict, tags_regex: str, args: argparse.Namespace) -> None:
@@ -168,44 +201,37 @@ def print_parsed_file(file: str, contents: Dict, tags_regex: str, args: argparse
     for i, text in enumerate(texts):
         matches = re.search(tags_regex, text)
         if not matches:
-            raise ParsingError(f"the following line could not be parsed:\n{text}")
+            log_warning(f"the following line could not be parsed:\n{text}", args.verbose)
+            continue
         groups = matches.groups()
         if len(groups) != 2:
-            raise ParsingError(f"the following line could not be parsed:\n{text}")
+            log_warning(f"the following line could not be parsed:\n{text}", args.verbose)
+            continue
+
         tag, txt = groups
         tag_counter[tag] += 1
-        author_info: AuthorInfo = blames[i]
+
         if args.style == "plain":
             text = re.sub(INLINE_REGEX, "", txt).strip()
-            git_author = ""
-        elif args.style == "bw":
-            text = boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " "
-            git_author = tag_git_author(
-                author_info.author, author_info.date, tag, args.age_limit, bw=True
-            )
-        else:
-            text = colorize(
-                boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " ",
-                tag,
-            )
-            git_author = tag_git_author(author_info.author, author_info.date, tag, args.age_limit)
+            print_lines.append(text.strip())
+            continue
 
+        text = prettify_line(txt, tag, args.style)
         grid = Table.grid(expand=False, pad_edge=True)
         grid.add_column(justify="left", width=max_digits + 8)
         grid.add_column(justify="left", width=CONSOLE.width // 2 - max_digits)
+        row = [pad_line_number(lines[i], max_digits), text]
         if args.author:
+            author_info: AuthorInfo = blames[i]
+            git_author = tag_git_author(author_info, tag, args.age_limit, args.style)
             grid.add_column(justify="left")
-            grid.add_row(pad_line_number(lines[i], max_digits), text, git_author)
-        else:
-            grid.add_row(pad_line_number(lines[i], max_digits), text)
+            row.append(git_author)
+        grid.add_row(*row)
         padded_grid = Padding(grid, (0, 0, 0, 2))
         print_lines.append(padded_grid)
 
-    if sum(count > 0 for count in tag_counter.values()) > 1 and args.summary:
-        if args.style == "full":
-            CONSOLE.print(prettify_summary(tag_counter))
-        elif args.style == "bw":
-            CONSOLE.print(prettify_summary(tag_counter, bw=True))
+    tag_counter = tag_counter if args.summary else {}
+    print_summary(tag_counter, args.style)
 
     for line in print_lines:
         CONSOLE.print(line)
@@ -250,6 +276,7 @@ def main():
         default=60,
         help="Age limit for comments. Comments older than this limit are marked.",
     )
+    parser.add_argument("--verbose", "-v", action="store_true")
     path_params = parser.add_mutually_exclusive_group()
     path_params.add_argument(
         "--relative-path",
@@ -289,11 +316,11 @@ def main():
     )
 
     args.path = os.path.abspath(args.path)
-    # XXX requires ripgrep installation
+    # NOTE requires ripgrep installation
     cmd = ["rg", tags_regex, args.path, "-n"]
     if args.glob:
         cmd.extend(["-g", args.glob])
-    # CONSOLE.print(" ".join(cmd))
+
     process_out = subprocess.run(cmd, capture_output=True)
     rg_error = process_out.stderr.decode("utf-8")
     if rg_error:
