@@ -9,4 +9,4 @@ A Python package to summarize all FIXME, TODO and related tags of a project
 [x] option to customize tags
 [ ] configuration wizard (emoji support)
 [ ] multiline comment support (may be difficult and not worth it?)
-[ ] git integration to show git authors optionally
+[x] git integration to show git authors optionally

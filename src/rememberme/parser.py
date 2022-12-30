@@ -4,10 +4,10 @@ The main function is the entry-point for running rememberme.
 """
 
 import argparse
-from datetime import datetime, timedelta
 import os
 import re
 import subprocess
+from datetime import datetime, timedelta
 from typing import Dict, List
 
 from rich.console import Console
@@ -15,7 +15,7 @@ from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 
-from rememberme.git_tools import blame_lines
+from rememberme.git_tools import AuthorInfo, blame_lines
 
 INLINE_REGEX = (
     r"^\s*(?:(?:#+|\/\/+|<!--|--|\/\*|\"\"\"|''')\s?)*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
@@ -174,19 +174,21 @@ def print_parsed_file(file: str, contents: Dict, tags_regex: str, args: argparse
             raise ParsingError(f"the following line could not be parsed:\n{text}")
         tag, txt = groups
         tag_counter[tag] += 1
-        git_author, git_date = blames[i]
+        author_info: AuthorInfo = blames[i]
         if args.style == "plain":
             text = re.sub(INLINE_REGEX, "", txt).strip()
             git_author = ""
         elif args.style == "bw":
             text = boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " "
-            git_author = tag_git_author(git_author, git_date, tag, args.age_limit, bw=True)
+            git_author = tag_git_author(
+                author_info.author, author_info.date, tag, args.age_limit, bw=True
+            )
         else:
             text = colorize(
                 boldify(emojify(tag)) + ": " + re.sub(INLINE_REGEX, "", txt).strip() + " ",
                 tag,
             )
-            git_author = tag_git_author(git_author, git_date, tag, args.age_limit)
+            git_author = tag_git_author(author_info.author, author_info.date, tag, args.age_limit)
 
         grid = Table.grid(expand=False, pad_edge=True)
         grid.add_column(justify="left", width=max_digits + 8)
