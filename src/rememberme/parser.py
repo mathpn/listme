@@ -35,9 +35,9 @@ def boldify(string: str) -> str:
 def colorize(string: str, tag: str) -> str:
     """Colorize text based on tag."""
     if tag == "TODO":
-        return f"[magenta]{string}[/magenta]"
+        return f"[bright_magenta]{string}[/bright_magenta]"
     if tag == "XXX":
-        return f"[black on yellow]{string}[/black on yellow]"
+        return f"[black on bright_yellow]{string}[/black on bright_yellow]"
     if tag == "FIXME":
         return f"[red]{string}[/red]"
     if tag == "OPTIMIZE":
@@ -49,7 +49,7 @@ def colorize(string: str, tag: str) -> str:
     if tag == "HACK":
         return f"[yellow]{string}[/yellow]"
     if tag == "#OLD__COMMIT":  # used to mark old comments (by commit date)
-        return f"[black on red]{string}[/black on red]"
+        return f"[white on red]{string}[/white on red]"
     return string
 
 
