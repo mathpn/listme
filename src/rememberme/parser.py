@@ -51,7 +51,7 @@ def colorize(string: str, tag: str) -> str:
     if tag == "HACK":
         return f"[yellow3]{string}[/yellow3]"
     if tag == "#OLD__COMMIT":  # used to mark old comments (by commit date)
-        return f"[grey0 on red1]{string}[/grey0 on red1]"
+        return f"[grey85 on red3]{string}[/grey85 on red3]"
     return string
 
 
