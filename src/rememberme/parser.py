@@ -168,7 +168,10 @@ def tag_git_author(author_info: AuthorInfo, tag: str, age_limit: int, style: str
 
     git_author = author_info.name
     if author_info.date < datetime.now() - timedelta(days=age_limit):
-        git_author = f"[bold]☠ OLD {git_author}[/bold]"
+        if CONFIG.get("extra_symbols"):
+            git_author = f"[bold]☠ OLD {git_author}[/bold]"
+        else:
+            git_author = f"[bold]OLD {git_author}[/bold]"
         tag = "#OLD__COMMIT"
 
     git_author = f"[{git_author}]"

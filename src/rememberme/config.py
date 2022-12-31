@@ -17,6 +17,7 @@ SYMBOLS = [
     ("☢", "radioactive sign"),
     ("✐", "pencil"),
     ("✄", "scisors"),
+    ("☠", "skull and crossbones"),
 ]
 
 

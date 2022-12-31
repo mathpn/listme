@@ -28,7 +28,7 @@ rememberme .
 
 You should see an output like this:
 
-![Example output screenshot](./screenshots/example_output.png?raw=true)
+![Example output screenshot](https://github.com/mathpn/rememberme/raw/main/screenshots/example_output.png?raw=true)
 
 Ripgrep uses ``.gitignore`` files present in your folders to ignore certain directories and files. If you want to add filters on top of ripgrep, use the ``--glob (-g)`` option.
 
