@@ -4,10 +4,10 @@ Summarize you FIXME, TODO, XXX (and other tags) comments so you don't forget the
 
 ## Features
 
-- Blazingly fast recursive search! Thanks to [ripgrep](https://github.com/BurntSushi/ripgrep), massive codebases can be scanned very quickly.
-- A nice and pretty summary with comment counts per tag is printed for each file.
-- Tags can be customized by the user.
-- Print the git author of each message, highlighting old commits.
+- ⚡ Blazingly fast recursive search! Thanks to [ripgrep](https://github.com/BurntSushi/ripgrep), massive codebases can be scanned very quickly.
+- 🌈 A nice and pretty summary with comment counts per tag is printed for each file.
+- 🏷 Tags can be customized by the user.
+- 🖨 Print the git author of each message, highlighting old commits.
 
 This project was inspired by practical needs and by [fixme](https://github.com/JohnPostlethwait/fixme). Since fixme is no longer maintained, it makes sense to have a new package (this time written in Python using ripgrep written in Rust) with some new features.
 
@@ -27,7 +27,8 @@ rememberme .
 ```
 
 You should see an output like this:
-[image]
+
+![Example output screenshot](./screenshots/example_output.png?raw=true)
 
 Ripgrep uses ``.gitignore`` files present in your folders to ignore certain directories and files. If you want to add filters on top of ripgrep, use the ``--glob (-g)`` option.
 
