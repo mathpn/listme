@@ -4,7 +4,7 @@ Code taken from https://github.com/mathpn/advent-of-code-2021/tree/main/day_15
 Find the shortest distance between nodes using the Dijkstra algorithm.
 This file is used only as generic code to be parsed.
 
-NOTE this is note in a multiline comment
+NOTE this is a note in a multiline comment
 """
 
 import math
