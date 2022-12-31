@@ -155,10 +155,10 @@ def stylize_filename(file: str, n_lines: int, style: str) -> str:
     if style == "plain":
         return file
     if style == "full":
-        return f"\n[bold deep_sky_blue3]• {file}[/bold deep_sky_blue3] ({n_lines} comments):"
+        return f"[bold deep_sky_blue3]• {file}[/bold deep_sky_blue3] ({n_lines} comments):"
     if style == "bw":
-        return f"\n[bold]• {file}[/bold] ({n_lines} comments):"
-    return f"\n{file}"
+        return f"[bold]• {file}[/bold] ({n_lines} comments):"
+    return f"{file}"
 
 
 def tag_git_author(author_info: AuthorInfo, tag: str, age_limit: int, style: str) -> str:
@@ -242,6 +242,7 @@ def print_parsed_file(file: str, contents: Dict, tags_regex: str, args: argparse
 
     for line in print_lines:
         CONSOLE.print(line)
+    CONSOLE.print()
 
 
 def shorten_filepath(file_path: str, search_path: str, path_type: str) -> str:
@@ -253,7 +254,7 @@ def shorten_filepath(file_path: str, search_path: str, path_type: str) -> str:
     return file_path
 
 
-def main():
+def main(raw_args=None):
     """Run Rememberme."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -314,7 +315,7 @@ def main():
     )
     style_group.add_argument("--bw", "-b", action="store_const", dest="style", const="bw")
     style_group.add_argument("--plain", "-p", action="store_const", dest="style", const="plain")
-    args = parser.parse_args()
+    args = parser.parse_args(raw_args)
 
     if not all(re.match("^(\w+)$", tag) for tag in args.tags):
         raise ValueError(
