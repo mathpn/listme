@@ -3,11 +3,11 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-rememberme = "rememberme.parser:main"
-rememberme-config = "rememberme.config:wizard"
+listme = "listme.parser:main"
+listme-config = "listme.config:wizard"
 
 [project]
-name = "rememberme"
+name = "listme"
 version = "0.2"
 authors = [
   { name="Matheus Pedroni", email="pnmatheus@protonmail.com" },

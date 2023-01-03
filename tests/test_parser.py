@@ -1,7 +1,7 @@
 from contextlib import redirect_stdout
 import io
 
-from rememberme.parser import main
+from listme.parser import main
 
 
 def test_parser():

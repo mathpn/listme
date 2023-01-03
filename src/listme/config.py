@@ -23,7 +23,7 @@ SYMBOLS = [
 
 def get_config() -> Dict[str, Any]:
     try:
-        config = json.load(open(f"{user_config_dir()}/rememberme/config.json", encoding="utf-8"))
+        config = json.load(open(f"{user_config_dir()}/listme/config.json", encoding="utf-8"))
         return config
     except Exception:
         return {}
@@ -31,7 +31,7 @@ def get_config() -> Dict[str, Any]:
 
 def wizard():
     CONSOLE = Console(highlight=False)
-    CONSOLE.print("Welcome to the rememberme configuration wizard!")
+    CONSOLE.print("Welcome to the listme configuration wizard!")
     CONSOLE.print("Can you see the following symbols correctly?")
     for symbol, name in SYMBOLS:
         CONSOLE.print(f"{symbol} -> {name}")
@@ -45,7 +45,7 @@ def wizard():
             "no problem, those symbols will not be shown. However, a font with extra unicode symbol support is strongly recommended!"
         )
 
-    os.makedirs(f"{user_config_dir()}/rememberme", exist_ok=True)
-    with open(f"{user_config_dir()}/rememberme/config.json", "w", encoding="utf-8") as config:
+    os.makedirs(f"{user_config_dir()}/listme", exist_ok=True)
+    with open(f"{user_config_dir()}/listme/config.json", "w", encoding="utf-8") as config:
         json.dump({"extra_symbols": support}, config)
-    CONSOLE.print("you can run this wizard again by calling rememberme-config")
+    CONSOLE.print("you can run this wizard again by calling listme-config")
