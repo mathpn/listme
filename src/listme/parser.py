@@ -1,6 +1,6 @@
 """
-Parser module with core rememberme functionality.
-The main function is the entry-point for running rememberme.
+Parser module with core listme functionality.
+The main function is the entry-point to run listme.
 """
 
 import argparse
@@ -15,8 +15,8 @@ from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 
-from rememberme.git_tools import AuthorInfo, blame_lines
-from rememberme.config import get_config, wizard
+from listme.git_tools import AuthorInfo, blame_lines
+from listme.config import get_config, wizard
 
 COMMENT_REGEX = (
     r"^(?:(?:(?:#+|//+|<!--|--|/\*|\"\"\"|''')+\s*)+)\s*|(?:-->|#}}|\*\/|--}}|}}|#+|#}|\"\"\"|''')*$"
@@ -258,7 +258,7 @@ def shorten_filepath(file_path: str, search_path: str, path_type: str) -> str:
 
 
 def main(raw_args=None):
-    """Run Rememberme."""
+    """Run listme."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "path",

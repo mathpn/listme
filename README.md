@@ -1,4 +1,4 @@
-# rememberme
+# listme
 
 Summarize you FIXME, TODO, XXX (and other tags) comments so you don't forget them.
 
@@ -15,20 +15,20 @@ This project was inspired by practical needs and by [fixme](https://github.com/J
 
 This package requires Python 3.8+, a recent version of [git](https://git-scm.com/) and [ripgrep](https://github.com/BurntSushi/ripgrep) (13.0+). Both git and ripgrep should be available in your PATH. Then install with pip:
 
-> pip install rememberme
+> pip install listme
 
 
 ## Usage
 
-Simply call rememberme with the folder or file of interest as the first argument.
+Simply call listme with the folder or file of interest as the first argument.
 
 ```bash
-rememberme .
+listme .
 ```
 
 You should see an output like this:
 
-![Example output screenshot](https://github.com/mathpn/rememberme/raw/main/screenshots/example_output.png?raw=true)
+![Example output screenshot](https://github.com/mathpn/listme/raw/main/screenshots/example_output.png?raw=true)
 
 Ripgrep uses ``.gitignore`` files present in your folders to ignore certain directories and files. If you want to add filters on top of ripgrep, use the ``--glob (-g)`` option.
 
@@ -37,11 +37,11 @@ Comments that were commited too long ago (limit set be the ``--age-limit`` param
 
 ### Configuration
 
-Most terminals should support all the Unicode symbols used in this project. If not, a patched font (e.g. one of [nerd fonts](https://www.nerdfonts.com/font-downloads)) is higly recommended. Still, to ensure compatibility across many terminal emulators and fonts, a configuration wizard will pop up the first time you run rememberme asking if some symbols are rendered correctly.
+Most terminals should support all the Unicode symbols used in this project. If not, a patched font (e.g. one of [nerd fonts](https://www.nerdfonts.com/font-downloads)) is higly recommended. Still, to ensure compatibility across many terminal emulators and fonts, a configuration wizard will pop up the first time you run listme asking if some symbols are rendered correctly.
 
 To run the configuration wizard again, simply run:
 
-> rememberme-config
+> listme-config
 
 
 ### Options
