@@ -25,64 +25,59 @@ func findRoot(worktree *git.Worktree) (string, error) {
 	// If it's not the root, move up one directory and check again.
 	parentDir := filepath.Dir(absPath)
 	if parentDir == absPath {
-		return "", fmt.Errorf("Git repository root not found")
+		return "", fmt.Errorf("git repository root not found")
 	}
 
 	return findRoot(worktree)
 }
 
-// Basic example of how to blame a repository.
-func main() {
-	CheckArgs("<file_to_blame>")
-	path := os.Args[1]
-
-	fmt.Println("1")
-	repo, err := git.PlainOpenWithOptions(".", &git.PlainOpenOptions{DetectDotGit: true, EnableDotGitCommonDir: false})
-	fmt.Println("2")
+func BlameFile(path string) (*git.BlameResult, error) {
+	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true, EnableDotGitCommonDir: false})
 	CheckIfError(err)
 
 	// Get the current worktree.
 	worktree, err := repo.Worktree()
 	if err != nil {
-		fmt.Printf("Error getting worktree: %v\n", err)
-		return
+		return nil, err
 	}
 
 	// Get the root of the Git repository.
 	// This will traverse parent directories until it finds the root.
 	rootPath, err := findRoot(worktree)
 	if err != nil {
-		fmt.Printf("Error finding root: %v\n", err)
-		return
+		return nil, err
 	}
-
-	fmt.Printf("Root of the Git repository: %s\n", rootPath)
 
 	// Retrieve the branch's HEAD, to then get the HEAD commit.
 	ref, err := repo.Head()
-	CheckIfError(err)
-	fmt.Println("3")
+	if err != nil {
+		return nil, err
+	}
 
 	c, err := repo.CommitObject(ref.Hash())
-	CheckIfError(err)
+	if err != nil {
+		return nil, err
+	}
 
 	// Convert the relative path to an absolute path
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
-		fmt.Printf("Error converting relative path to absolute path: %v\n", err)
-		return
+		return nil, err
 	}
-	Info("git blame %s", path)
+	// Info("git blame %s", path)
 
 	gitPath := strings.ReplaceAll(absolutePath, rootPath, "")
 	gitPath = strings.Trim(gitPath, "/ \t\n")
-	fmt.Printf("%s", c)
-	fmt.Println(gitPath)
+
 	// Blame the given file/path.
 	br, err := git.Blame(c, gitPath)
-	fmt.Println(err)
-	CheckIfError(err)
+	return br, err
+}
 
-	fmt.Println("6")
+func main() {
+	br, err := BlameFile("../../src/listme/parser.py")
+	if err != nil {
+		panic(err)
+	}
 	fmt.Printf("%s", br.String())
 }
