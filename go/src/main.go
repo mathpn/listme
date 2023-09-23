@@ -75,8 +75,9 @@ func main() {
 	Info("git blame %s", path)
 
 	gitPath := strings.ReplaceAll(absolutePath, rootPath, "")
-	gitPath = strings.TrimSpace(gitPath)
+	gitPath = strings.Trim(gitPath, "/ \t\n")
 	fmt.Printf("%s", c)
+	fmt.Println(gitPath)
 	// Blame the given file/path.
 	br, err := git.Blame(c, gitPath)
 	fmt.Println(err)
