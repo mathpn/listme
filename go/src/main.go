@@ -1,14 +1,24 @@
 package main
 
 import (
+	"bufio"
+	"flag"
 	"fmt"
+	"io/fs"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
+
+	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/go-git/go-git/v5"
-	. "github.com/go-git/go-git/v5/_examples"
+	// regexp "github.com/wasilibs/go-re2" // TODO decide between both libraries
 )
+
+var tags = []string{"BUG", "FIXME", "XXX", "TODO", "HACK", "OPTIMIZE", "NOTE"}
 
 func findRoot(worktree *git.Worktree) (string, error) {
 	// Get the absolute path of the current worktree.
@@ -33,7 +43,9 @@ func findRoot(worktree *git.Worktree) (string, error) {
 
 func BlameFile(path string) (*git.BlameResult, error) {
 	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true, EnableDotGitCommonDir: false})
-	CheckIfError(err)
+	if err != nil {
+		return nil, err
+	}
 
 	// Get the current worktree.
 	worktree, err := repo.Worktree()
@@ -74,10 +86,117 @@ func BlameFile(path string) (*git.BlameResult, error) {
 	return br, err
 }
 
-func main() {
-	br, err := BlameFile("../../src/listme/parser.py")
-	if err != nil {
-		panic(err)
+func parseArgs(flagArgs []string) (string, []string) {
+	if len(flagArgs) < 1 {
+		log.Fatal("usage: listme <path>")
 	}
-	fmt.Printf("%s", br.String())
+	tags_regex := fmt.Sprintf(
+		`(?m)(?:^|\s*(?:(?:#+|//+|<!--|--|/*|"""|''')+\s*)+)\s*(?:^|\b)(%s)[\s:;-]+(.+?)(?:$|-->|#}}|\*/|--}}|}}|#+|#}|"""|''')*$`,
+		strings.Join(tags, "|"),
+	)
+	// fmt.Println(tags_regex)
+	paths := []string{flagArgs[0]}
+	return tags_regex, paths
+}
+
+func main() {
+	var workers = flag.Int("w", 128, "[debug] set number of search workers")
+	flag.Parse()
+
+	query, paths := parseArgs(flag.Args())
+	debug := &SearchDebug{
+		Workers: *workers,
+	}
+
+	r, err := regexp.Compile(query)
+	if err != nil {
+		log.Fatalf("Bad regex: %s", err)
+	}
+
+	Search(paths, r, debug)
+}
+
+type SearchDebug struct {
+	Workers int
+}
+
+type SearchOptions struct {
+	Kind  int
+	Lines bool
+	Regex *regexp.Regexp
+}
+
+type searchJob struct {
+	path  string
+	regex *regexp.Regexp
+}
+
+type matchLine struct {
+	n    int
+	tag  string
+	text string
+}
+
+func Search(paths []string, regex *regexp.Regexp, debug *SearchDebug) {
+	searchJobs := make(chan *searchJob)
+
+	var wg sync.WaitGroup
+	for w := 0; w < debug.Workers; w++ {
+		go searchWorker(searchJobs, &wg)
+	}
+	for _, path := range paths {
+		filepath.WalkDir(
+			path,
+			func(path string, d fs.DirEntry, err error) error { return walk(path, d, err, regex, searchJobs, &wg) },
+		)
+	}
+	wg.Wait()
+}
+
+func walk(path string, d fs.DirEntry, err error, regex *regexp.Regexp, searchJobs chan *searchJob, wg *sync.WaitGroup) error {
+	if err != nil {
+		return err
+	}
+	if !d.IsDir() {
+		wg.Add(1)
+		searchJobs <- &searchJob{
+			path,
+			regex,
+		}
+	}
+	return nil
+}
+
+func searchWorker(jobs chan *searchJob, wg *sync.WaitGroup) {
+	for job := range jobs {
+		f, err := os.Open(job.path)
+		if err != nil {
+			log.Fatalf("couldn't open path %s: %s\n", job.path, err)
+		}
+
+		scanner := bufio.NewScanner(f)
+
+		line := 1
+		lines := make([]*matchLine, 0)
+		for scanner.Scan() {
+			text := scanner.Bytes()
+
+			if mimeType := http.DetectContentType(text); strings.Split(mimeType, ";")[0] != "text/plain" {
+				fmt.Printf("skipping non-text file: %s | %s\n", job.path, mimeType)
+				break
+			}
+
+			match := job.regex.FindSubmatch(scanner.Bytes())
+			if len(match) >= 3 {
+				line := matchLine{n: line, tag: string(match[1]), text: string(match[2])}
+				lines = append(lines, &line)
+				// fmt.Printf("%v\n", line)
+			}
+			line++
+		}
+		for _, line := range lines {
+			fmt.Printf("%s [Line %d] %s: %s\n", job.path, line.n, line.tag, line.text)
+		}
+		wg.Done()
+	}
 }
