@@ -8,85 +8,33 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"regexp"
 	"strings"
 	"sync"
-
-	"github.com/go-git/go-git/v5"
 	// regexp "github.com/wasilibs/go-re2" // TODO decide between both libraries
 )
 
 var tags = []string{"BUG", "FIXME", "XXX", "TODO", "HACK", "OPTIMIZE", "NOTE"}
 
-func findRoot(worktree *git.Worktree) (string, error) {
-	// Get the absolute path of the current worktree.
-	absPath, err := filepath.Abs(worktree.Filesystem.Root())
-	if err != nil {
-		return "", err
-	}
-
-	// Check if the current directory is the root of the Git repository.
-	if _, err := os.Stat(filepath.Join(absPath, ".git")); err == nil {
-		return absPath, nil
-	}
-
-	// If it's not the root, move up one directory and check again.
-	parentDir := filepath.Dir(absPath)
-	if parentDir == absPath {
-		return "", fmt.Errorf("git repository root not found")
-	}
-
-	return findRoot(worktree)
-}
-
-func BlameFile(path string) (*git.BlameResult, error) {
-	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true, EnableDotGitCommonDir: false})
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the current worktree.
-	worktree, err := repo.Worktree()
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the root of the Git repository.
-	// This will traverse parent directories until it finds the root.
-	rootPath, err := findRoot(worktree)
-	if err != nil {
-		return nil, err
-	}
-
-	// Retrieve the branch's HEAD, to then get the HEAD commit.
-	ref, err := repo.Head()
-	if err != nil {
-		return nil, err
-	}
-
-	c, err := repo.CommitObject(ref.Hash())
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert the relative path to an absolute path
+func BlameFile(path string) ([]byte, error) {
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
-	// Info("git blame %s", path)
 
-	gitPath := strings.ReplaceAll(absolutePath, rootPath, "")
-	gitPath = strings.Trim(gitPath, "/ \t\n")
-
-	// Blame the given file/path.
-	br, err := git.Blame(c, gitPath)
-	return br, err
+	err = os.Chdir(filepath.Dir(absolutePath))
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command("git", "blame", absolutePath, "--porcelain")
+	out, err := cmd.Output()
+	return out, err
 }
 
-func parseArgs(flagArgs []string) (string, []string) {
+func parseArgs(flagArgs []string) (string, string) {
 	if len(flagArgs) < 1 {
 		log.Fatal("usage: listme <path>")
 	}
@@ -95,16 +43,15 @@ func parseArgs(flagArgs []string) (string, []string) {
 		strings.Join(tags, "|"),
 	)
 	// fmt.Println(tags_regex)
-	paths := []string{flagArgs[0]}
-	return tags_regex, paths
+	return tags_regex, flagArgs[0]
 }
 
 func main() {
 	var workers = flag.Int("w", 128, "[debug] set number of search workers")
 	flag.Parse()
 
-	query, paths := parseArgs(flag.Args())
-	debug := &SearchDebug{
+	query, path := parseArgs(flag.Args())
+	opt := &Options{
 		Workers: *workers,
 	}
 
@@ -113,17 +60,11 @@ func main() {
 		log.Fatalf("Bad regex: %s", err)
 	}
 
-	Search(paths, r, debug)
+	Search(path, r, opt)
 }
 
-type SearchDebug struct {
+type Options struct {
 	Workers int
-}
-
-type SearchOptions struct {
-	Kind  int
-	Lines bool
-	Regex *regexp.Regexp
 }
 
 type searchJob struct {
@@ -137,20 +78,42 @@ type matchLine struct {
 	text string
 }
 
-func Search(paths []string, regex *regexp.Regexp, debug *SearchDebug) {
+type searchResult struct {
+	path  string
+	lines []*matchLine
+}
+
+func Search(path string, regex *regexp.Regexp, debug *Options) {
 	searchJobs := make(chan *searchJob)
+	searchResults := make(chan *searchResult)
 
 	var wg sync.WaitGroup
+	var wgResult sync.WaitGroup
 	for w := 0; w < debug.Workers; w++ {
-		go searchWorker(searchJobs, &wg)
+		go searchWorker(searchJobs, searchResults, &wg, &wgResult)
 	}
-	for _, path := range paths {
-		filepath.WalkDir(
-			path,
-			func(path string, d fs.DirEntry, err error) error { return walk(path, d, err, regex, searchJobs, &wg) },
-		)
+
+	for w := 0; w < debug.Workers; w++ {
+		go processResult(searchResults, &wgResult)
 	}
+
+	filepath.WalkDir(
+		path,
+		func(path string, d fs.DirEntry, err error) error { return walk(path, d, err, regex, searchJobs, &wg) },
+	)
 	wg.Wait()
+	wgResult.Wait()
+}
+
+func processResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
+	for result := range searchResults {
+		// blame, _ := BlameFile(result.path)
+		// FIXME parse blame
+		for _, line := range result.lines {
+			fmt.Printf("%s [Line %d] %s: %s\n", result.path, line.n, line.tag, line.text)
+		}
+		wgResult.Done()
+	}
 }
 
 func walk(path string, d fs.DirEntry, err error, regex *regexp.Regexp, searchJobs chan *searchJob, wg *sync.WaitGroup) error {
@@ -167,7 +130,7 @@ func walk(path string, d fs.DirEntry, err error, regex *regexp.Regexp, searchJob
 	return nil
 }
 
-func searchWorker(jobs chan *searchJob, wg *sync.WaitGroup) {
+func searchWorker(jobs chan *searchJob, searchResults chan *searchResult, wg *sync.WaitGroup, wgResult *sync.WaitGroup) {
 	for job := range jobs {
 		f, err := os.Open(job.path)
 		if err != nil {
@@ -182,7 +145,7 @@ func searchWorker(jobs chan *searchJob, wg *sync.WaitGroup) {
 			text := scanner.Bytes()
 
 			if mimeType := http.DetectContentType(text); strings.Split(mimeType, ";")[0] != "text/plain" {
-				fmt.Printf("skipping non-text file: %s | %s\n", job.path, mimeType)
+				// fmt.Printf("skipping non-text file: %s | %s\n", job.path, mimeType)
 				break
 			}
 
@@ -194,8 +157,9 @@ func searchWorker(jobs chan *searchJob, wg *sync.WaitGroup) {
 			}
 			line++
 		}
-		for _, line := range lines {
-			fmt.Printf("%s [Line %d] %s: %s\n", job.path, line.n, line.tag, line.text)
+		if len(lines) > 0 {
+			wgResult.Add(1)
+			searchResults <- &searchResult{path: job.path, lines: lines}
 		}
 		wg.Done()
 	}
