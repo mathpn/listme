@@ -1,7 +1,7 @@
 # TODO
 
 [x] ignore .gitignore paths
-[ ] parse git blame
+[x] parse git blame
 [ ] pretty output
 [ ] CLI options
 [ ] test cross-platform compatibility
