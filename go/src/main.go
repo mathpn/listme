@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -23,7 +25,7 @@ import (
 
 var tags = []string{"BUG", "FIXME", "XXX", "TODO", "HACK", "OPTIMIZE", "NOTE"}
 
-func BlameFile(path string) ([]byte, error) {
+func BlameFile(path string) (*GitBlame, error) {
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -33,9 +35,83 @@ func BlameFile(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command("git", "blame", absolutePath, "--porcelain")
-	out, err := cmd.Output()
-	return out, err
+
+	cmd := exec.Command("git", "blame", absolutePath, "--line-porcelain")
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	blameChannel := make(chan []*LineBlame, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		parseGitBlame(stdout, blameChannel)
+	}()
+
+	wg.Wait()
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("git blame failed: %v\n%s", err, stderr.String())
+	}
+
+	blames := <-blameChannel
+	return &GitBlame{blames: blames}, nil
+}
+
+type LineBlame struct {
+	Author string
+	Date   string
+}
+
+type GitBlame struct {
+	blames []*LineBlame
+}
+
+func (b *GitBlame) BlameLine(line int) (*LineBlame, error) {
+	line = line - 1
+	if line < 0 || line >= len(b.blames) {
+		return nil, fmt.Errorf("line out of range")
+	}
+	return b.blames[line], nil
+}
+
+func parseGitBlame(out io.Reader, blameChannel chan []*LineBlame) {
+	var blames []*LineBlame
+	lr := bufio.NewReader(out) // XXX NewReaderSize?
+	s := bufio.NewScanner(lr)
+
+	var currentBlame *LineBlame
+	for s.Scan() {
+		buf := s.Text()
+		if strings.HasPrefix(buf, "author ") {
+			if currentBlame != nil {
+				blames = append(blames, currentBlame)
+			}
+			currentBlame = &LineBlame{
+				Author: strings.TrimPrefix(buf, "author "),
+			}
+		} else if strings.HasPrefix(buf, "author-time ") {
+			if currentBlame != nil {
+				currentBlame.Date = strings.TrimPrefix(buf, "author-time ")
+			}
+		}
+	}
+
+	// Append the last entry
+	if currentBlame != nil {
+		blames = append(blames, currentBlame)
+	}
+
+	blameChannel <- blames
 }
 
 func parseArgs(flagArgs []string) (string, string) {
@@ -131,10 +207,21 @@ func Search(path string, regex *regexp.Regexp, matcher gitignore.Matcher, debug 
 
 func processResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
 	for result := range searchResults {
-		// blame, _ := BlameFile(result.path)
-		// FIXME parse blame
+		gb, gb_err := BlameFile(result.path)
 		for _, line := range result.lines {
-			fmt.Printf("%s [Line %d] %s: %s\n", result.path, line.n, line.tag, line.text)
+			var blame *LineBlame
+			var err error
+			if gb_err == nil {
+				blame, err = gb.BlameLine(line.n)
+			} else {
+				// fmt.Printf("foo bar %v\n", gb_err)
+			}
+			if gb_err == nil && err == nil {
+				fmt.Printf("%s [Line %d] %s: %s [%s]\n", result.path, line.n, line.tag, line.text, blame.Author)
+			} else {
+				// fmt.Printf("blame err: %v\n", gb_err)
+				fmt.Printf("%s [Line %d] %s: %s\n", result.path, line.n, line.tag, line.text)
+			}
 		}
 		wgResult.Done()
 	}
