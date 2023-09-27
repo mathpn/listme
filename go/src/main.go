@@ -180,8 +180,18 @@ type matchLine struct {
 }
 
 type searchResult struct {
-	path  string
-	lines []*matchLine
+	Path  string
+	Lines []*matchLine
+}
+
+func (r *searchResult) MaxLineNumber() int {
+	max := 0
+	for _, line := range r.Lines {
+		if line.n > max {
+			max = line.n
+		}
+	}
+	return max
 }
 
 type Style int
@@ -283,13 +293,13 @@ func colorize(text string, tag string) string {
 	return text
 }
 
-// def prettify_line(text: str, tag: str, style: str):
-//     """Add rich text formatting to comment line."""
-//     text = re.sub(COMMENT_REGEX, "", text)
-//     text = boldify(emojify(tag)) + ": " + text + " "
-//     if style == "full":
-//         text = colorize(text, tag)
-//     return text
+// TODO slighly inefficient (wasted computations)
+func padLineNumber(number int, maxNumber int) string {
+	strNumber := fmt.Sprint(number)
+	strMaxNumber := fmt.Sprint(maxNumber)
+	pad := strings.Repeat(" ", len(strMaxNumber)-len(strNumber))
+	return fmt.Sprintf("[Line %s%d] ", pad, number)
+}
 
 func prettiyfyLine(text string, tag string, style Style) string {
 	prettyTag := BoldStyle.Render(emojify(tag))
@@ -305,20 +315,20 @@ const STYLE = FullStyle // TODO parameter
 
 func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
 	for result := range searchResults {
-		fmt.Println(stylizeFilename(result.path, len(result.lines), STYLE))
-		gb, gb_err := BlameFile(result.path)
-		for _, line := range result.lines {
+		fmt.Println(stylizeFilename(result.Path, len(result.Lines), STYLE))
+		gb, gb_err := BlameFile(result.Path)
+		for _, line := range result.Lines {
 			text := prettiyfyLine(line.text, line.tag, STYLE)
+			lineNumber := padLineNumber(line.n, result.MaxLineNumber())
 			var blame *LineBlame
 			var err error
 			if gb_err == nil {
 				blame, err = gb.BlameLine(line.n)
 			}
 			if gb_err == nil && err == nil {
-				fmt.Println(fmt.Sprintf("[Line %d] ", line.n) + text + fmt.Sprintf(" [%s]", blame.Author))
+				fmt.Println(lineNumber + text + fmt.Sprintf(" [%s]", blame.Author))
 			} else {
-				fmt.Println(
-					fmt.Sprintf("[Line %d] ", line.n) + text)
+				fmt.Println(lineNumber + text)
 			}
 		}
 		fmt.Println()
@@ -385,7 +395,7 @@ func searchWorker(jobs chan *searchJob, searchResults chan *searchResult, matche
 		}
 		if len(lines) > 0 {
 			wgResult.Add(1)
-			searchResults <- &searchResult{path: job.path, lines: lines}
+			searchResults <- &searchResult{Path: job.path, Lines: lines}
 		}
 		wg.Done()
 	}
