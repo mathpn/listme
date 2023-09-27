@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"time"
 
 	"regexp"
 	"strings"
@@ -69,8 +71,8 @@ func BlameFile(path string) (*GitBlame, error) {
 }
 
 type LineBlame struct {
-	Author string
-	Date   string
+	Author    string
+	Timestamp int64
 }
 
 type GitBlame struct {
@@ -102,7 +104,11 @@ func parseGitBlame(out io.Reader, blameChannel chan []*LineBlame) {
 			}
 		} else if strings.HasPrefix(buf, "author-time ") {
 			if currentBlame != nil {
-				currentBlame.Date = strings.TrimPrefix(buf, "author-time ")
+				tsStr := strings.TrimPrefix(buf, "author-time ")
+				ts, err := strconv.ParseInt(tsStr, 10, 64)
+				if err == nil {
+					currentBlame.Timestamp = ts
+				}
 			}
 		}
 	}
@@ -311,7 +317,32 @@ func prettiyfyLine(text string, tag string, style Style) string {
 	return prettyTag + text
 }
 
+var OldCommitStyle = BoldStyle.Copy().Foreground(lipgloss.Color("#dadada")).Background(lipgloss.Color("#d70000"))
+
+// TODO right-align blame
+func prettiyfyBlame(blame *LineBlame, ageLimit int, style Style) string {
+	if style == PlainStyle {
+		return ""
+	}
+
+	blameStr := fmt.Sprintf("[%s]", blame.Author)
+	if blame.Timestamp == 0 {
+		return blameStr
+	}
+	date := time.Unix(blame.Timestamp, 0)
+	currentDate := time.Now()
+
+	diff := currentDate.Sub(date)
+	maxAge := 30 * 24 * time.Hour
+	if diff > maxAge {
+		blameStr := fmt.Sprintf("[☠ OLD %s]", blame.Author)
+		return OldCommitStyle.Render(blameStr)
+	}
+	return blameStr
+}
+
 const STYLE = FullStyle // TODO parameter
+const AGELIMIT = 30     // TODO parameter
 
 func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
 	for result := range searchResults {
@@ -326,7 +357,8 @@ func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
 				blame, err = gb.BlameLine(line.n)
 			}
 			if gb_err == nil && err == nil {
-				fmt.Println(lineNumber + text + fmt.Sprintf(" [%s]", blame.Author))
+				blameStr := prettiyfyBlame(blame, AGELIMIT, STYLE)
+				fmt.Println(lineNumber + text + " " + blameStr)
 			} else {
 				fmt.Println(lineNumber + text)
 			}
