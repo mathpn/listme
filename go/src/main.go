@@ -214,13 +214,13 @@ func Search(path string, regex *regexp.Regexp, matcher gitignore.Matcher, debug 
 
 // TODO organize code
 var BaseStyle = lipgloss.NewStyle()
-var FilenameStyle = BaseStyle.Copy().Bold(true)
-var FilenameColorStyle = FilenameStyle.Copy().Foreground(lipgloss.Color("#0087d7"))
+var BoldStyle = BaseStyle.Copy().Bold(true)
+var FilenameColorStyle = BoldStyle.Copy().Foreground(lipgloss.Color("#0087d7"))
 
 func stylizeFilename(file string, nComments int, style Style) string {
 	styler := BaseStyle
 	if style == BWStyle {
-		styler = FilenameStyle
+		styler = BoldStyle
 	} else if style == FullStyle {
 		styler = FilenameColorStyle
 	}
@@ -255,22 +255,73 @@ func emojify(tag string) string {
 	return "⚠ " + tag
 }
 
+var TodoStyle = BaseStyle.Copy().Foreground(lipgloss.Color("#5fafaf"))
+var XxxStyle = BaseStyle.Copy().Foreground(lipgloss.Color("#000000")).Background(lipgloss.Color("#d7af00"))
+var FixmeStyle = BaseStyle.Copy().Foreground(lipgloss.Color("#ff0000"))
+var OptimizeStyle = BaseStyle.Copy().Foreground(lipgloss.Color("#d75f00"))
+var BugStyle = BaseStyle.Copy().Foreground(lipgloss.Color("#eeeeee")).Background(lipgloss.Color("#870000"))
+var NoteStyle = BaseStyle.Copy().Foreground(lipgloss.Color("#87af87"))
+var HackStyle = BaseStyle.Copy().Foreground(lipgloss.Color("#d7d700"))
+
+func colorize(text string, tag string) string {
+	switch tag {
+	case "TODO":
+		return TodoStyle.Render(text)
+	case "XXX":
+		return XxxStyle.Render(text)
+	case "FIXME":
+		return FixmeStyle.Render(text)
+	case "OPTIMIZE":
+		return OptimizeStyle.Render(text)
+	case "BUG":
+		return BugStyle.Render(text)
+	case "NOTE":
+		return NoteStyle.Render(text)
+	case "HACK":
+		return HackStyle.Render(text)
+	}
+	return text
+}
+
+// def prettify_line(text: str, tag: str, style: str):
+//     """Add rich text formatting to comment line."""
+//     text = re.sub(COMMENT_REGEX, "", text)
+//     text = boldify(emojify(tag)) + ": " + text + " "
+//     if style == "full":
+//         text = colorize(text, tag)
+//     return text
+
+func prettiyfyLine(text string, tag string, style Style) string {
+	prettyTag := BoldStyle.Render(emojify(tag))
+	text = " " + text
+	if style == FullStyle {
+		prettyTag = colorize(prettyTag, tag)
+		text = colorize(text, tag)
+	}
+	return prettyTag + text
+}
+
+const STYLE = FullStyle // TODO parameter
+
 func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
 	for result := range searchResults {
-		fmt.Println(stylizeFilename(result.path, len(result.lines), FullStyle)) // TODO parameter
+		fmt.Println(stylizeFilename(result.path, len(result.lines), STYLE))
 		gb, gb_err := BlameFile(result.path)
 		for _, line := range result.lines {
+			text := prettiyfyLine(line.text, line.tag, STYLE)
 			var blame *LineBlame
 			var err error
 			if gb_err == nil {
 				blame, err = gb.BlameLine(line.n)
 			}
 			if gb_err == nil && err == nil {
-				fmt.Printf("[Line %d] %s: %s [%s]\n", line.n, emojify(line.tag), line.text, blame.Author)
+				fmt.Println(fmt.Sprintf("[Line %d] ", line.n) + text + fmt.Sprintf(" [%s]", blame.Author))
 			} else {
-				fmt.Printf("[Line %d] %s: %s\n", line.n, emojify(line.tag), line.text)
+				fmt.Println(
+					fmt.Sprintf("[Line %d] ", line.n) + text)
 			}
 		}
+		fmt.Println()
 		wgResult.Done()
 	}
 }
