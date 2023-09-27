@@ -19,6 +19,7 @@ import (
 
 	// regexp "github.com/wasilibs/go-re2" // TODO decide between both libraries
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 )
@@ -183,6 +184,14 @@ type searchResult struct {
 	lines []*matchLine
 }
 
+type Style int
+
+const (
+	FullStyle = iota
+	BWStyle
+	PlainStyle
+)
+
 func Search(path string, regex *regexp.Regexp, matcher gitignore.Matcher, debug *Options) {
 	searchJobs := make(chan *searchJob)
 	searchResults := make(chan *searchResult)
@@ -193,9 +202,7 @@ func Search(path string, regex *regexp.Regexp, matcher gitignore.Matcher, debug 
 		go searchWorker(searchJobs, searchResults, matcher, &wg, &wgResult)
 	}
 
-	for w := 0; w < debug.Workers; w++ {
-		go processResult(searchResults, &wgResult)
-	}
+	go PrintResult(searchResults, &wgResult)
 
 	filepath.WalkDir(
 		path,
@@ -205,22 +212,42 @@ func Search(path string, regex *regexp.Regexp, matcher gitignore.Matcher, debug 
 	wgResult.Wait()
 }
 
-func processResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
+// TODO organize code
+var BaseStyle = lipgloss.NewStyle()
+var FilenameStyle = BaseStyle.Copy().Bold(true)
+var FilenameColorStyle = FilenameStyle.Copy().Foreground(lipgloss.Color("#0087d7"))
+
+func stylizeFilename(file string, nComments int, style Style) string {
+	styler := BaseStyle
+	if style == BWStyle {
+		styler = FilenameStyle
+	} else if style == FullStyle {
+		styler = FilenameColorStyle
+	}
+	fname := styler.Render(fmt.Sprintf("• %s", file))
+	var comments string
+	if nComments > 1 {
+		comments = styler.Render(fmt.Sprintf("(%d comments)", nComments))
+	} else {
+		comments = styler.Render(fmt.Sprintf("(%d comment)", nComments))
+	}
+	return fname + " " + comments
+}
+
+func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
 	for result := range searchResults {
+		fmt.Println(stylizeFilename(result.path, len(result.lines), FullStyle)) // TODO parameter
 		gb, gb_err := BlameFile(result.path)
 		for _, line := range result.lines {
 			var blame *LineBlame
 			var err error
 			if gb_err == nil {
 				blame, err = gb.BlameLine(line.n)
-			} else {
-				// fmt.Printf("foo bar %v\n", gb_err)
 			}
 			if gb_err == nil && err == nil {
-				fmt.Printf("%s [Line %d] %s: %s [%s]\n", result.path, line.n, line.tag, line.text, blame.Author)
+				fmt.Printf("[Line %d] %s: %s [%s]\n", line.n, line.tag, line.text, blame.Author)
 			} else {
-				// fmt.Printf("blame err: %v\n", gb_err)
-				fmt.Printf("%s [Line %d] %s: %s\n", result.path, line.n, line.tag, line.text)
+				fmt.Printf("[Line %d] %s: %s\n", line.n, line.tag, line.text)
 			}
 		}
 		wgResult.Done()
@@ -255,7 +282,7 @@ func searchWorker(jobs chan *searchJob, searchResults chan *searchResult, matche
 
 		pathList := strings.Split(job.path, string(filepath.Separator))
 		if matcher != nil && matcher.Match(pathList, info.IsDir()) {
-			fmt.Printf("skipping %s due to .gitignore\n", job.path)
+			// fmt.Printf("skipping %s due to .gitignore\n", job.path)
 			wg.Done()
 			continue
 		}
