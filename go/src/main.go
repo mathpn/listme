@@ -234,6 +234,27 @@ func stylizeFilename(file string, nComments int, style Style) string {
 	return fname + " " + comments
 }
 
+func emojify(tag string) string {
+	// TODO extra symbols support config
+	switch tag {
+	case "TODO":
+		return "✓ TODO"
+	case "XXX":
+		return "✘ XXX"
+	case "FIXME":
+		return "⚠ FIXME"
+	case "OPTIMIZE":
+		return " OPTIMIZE"
+	case "BUG":
+		return "☢ BUG"
+	case "NOTE":
+		return "✐ NOTE"
+	case "HACK":
+		return "✄ HACK"
+	}
+	return "⚠ " + tag
+}
+
 func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
 	for result := range searchResults {
 		fmt.Println(stylizeFilename(result.path, len(result.lines), FullStyle)) // TODO parameter
@@ -245,9 +266,9 @@ func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
 				blame, err = gb.BlameLine(line.n)
 			}
 			if gb_err == nil && err == nil {
-				fmt.Printf("[Line %d] %s: %s [%s]\n", line.n, line.tag, line.text, blame.Author)
+				fmt.Printf("[Line %d] %s: %s [%s]\n", line.n, emojify(line.tag), line.text, blame.Author)
 			} else {
-				fmt.Printf("[Line %d] %s: %s\n", line.n, line.tag, line.text)
+				fmt.Printf("[Line %d] %s: %s\n", line.n, emojify(line.tag), line.text)
 			}
 		}
 		wgResult.Done()
