@@ -24,9 +24,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
+	"golang.org/x/sys/unix"
 )
 
 var tags = []string{"BUG", "FIXME", "XXX", "TODO", "HACK", "OPTIMIZE", "NOTE"}
+
+const maxAuthorLength = 22
 
 func BlameFile(path string) (*GitBlame, error) {
 	absolutePath, err := filepath.Abs(path)
@@ -87,6 +90,28 @@ func (b *GitBlame) BlameLine(line int) (*LineBlame, error) {
 	return b.blames[line], nil
 }
 
+func truncateName(name string, maxLength int) string {
+	totalLen := len(name)
+	words := strings.Fields(name) // Split the name into words
+
+	truncated := []string{}
+	for i := len(words) - 1; i >= 0; i-- {
+		if totalLen > maxLength {
+			truncated = append(truncated, string(words[i][0])) // First letter
+			totalLen -= len(words[i]) - 2
+		} else {
+			truncated = append(truncated, words[i])
+		}
+	}
+
+	for i, j := 0, len(truncated)-1; i < j; i, j = i+1, j-1 {
+		truncated[i], truncated[j] = truncated[j], truncated[i]
+	}
+
+	return strings.Join(truncated, " ")
+}
+
+// TODO truncate git author length
 func parseGitBlame(out io.Reader, blameChannel chan []*LineBlame) {
 	var blames []*LineBlame
 	lr := bufio.NewReader(out) // XXX NewReaderSize?
@@ -100,7 +125,7 @@ func parseGitBlame(out io.Reader, blameChannel chan []*LineBlame) {
 				blames = append(blames, currentBlame)
 			}
 			currentBlame = &LineBlame{
-				Author: strings.TrimPrefix(buf, "author "),
+				Author: truncateName(strings.TrimPrefix(buf, "author "), maxAuthorLength),
 			}
 		} else if strings.HasPrefix(buf, "author-time ") {
 			if currentBlame != nil {
