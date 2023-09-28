@@ -177,6 +177,26 @@ func loadGitignore(path string) (gitignore.Matcher, error) {
 	return matcher, nil
 }
 
+func getWinsize() (*unix.Winsize, error) {
+
+	ws, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
+	if err != nil {
+		return nil, os.NewSyscallError("GetWinsize", err)
+	}
+
+	return ws, nil
+}
+
+func getWidth() int {
+	ws, err := getWinsize()
+
+	if err != nil {
+		return 50
+	}
+
+	return int(ws.Col)
+}
+
 func main() {
 	var workers = flag.Int("w", 128, "[debug] set number of search workers")
 	flag.Parse()
@@ -208,6 +228,48 @@ type matchLine struct {
 	n    int
 	tag  string
 	text string
+}
+
+// TODO messy, refactor
+func (l *matchLine) Render(width int, gb *GitBlame, maxLineNumber int, ageLimit int, style Style) {
+	maxDigits := len(fmt.Sprint(maxLineNumber))
+	maxTextWidth := width - maxDigits - int(0.2*float64(width)) - (maxAuthorLength + 8)
+
+	prettyTag := emojify(l.tag) + " "
+	lenTag := len(l.tag) + 3
+	maxLen := len(l.text) + lenTag
+	for i := 0; i < maxLen; i += maxTextWidth {
+		end := i + maxTextWidth
+		if end > maxLen {
+			end = maxLen
+		}
+		var chunk string
+		if i == 0 {
+			if style == FullStyle {
+				chunk = colorize(BoldStyle.Render(prettyTag), l.tag) + colorize(l.text[i:end-lenTag], l.tag)
+			} else {
+				chunk = BoldStyle.Render(prettyTag) + l.text[i:end-lenTag]
+			}
+			lineNumber := padLineNumber(l.n, maxDigits)
+			pad := strings.Repeat(" ", maxTextWidth-(end-i))
+			chunk = chunk + pad
+			var blame *LineBlame
+			var err error
+			if gb != nil {
+				blame, err = gb.BlameLine(l.n)
+			}
+			if gb != nil && err == nil {
+				blameStr := prettiyfyBlame(blame, AGELIMIT, STYLE)
+				fmt.Println(lineNumber + chunk + " " + blameStr)
+			} else {
+				fmt.Println(lineNumber + chunk)
+			}
+		} else {
+			chunk = colorize(l.text[i-lenTag:end-lenTag], l.tag)
+			lineNumber := strings.Repeat(" ", len(fmt.Sprint(maxLineNumber))+10)
+			fmt.Println(lineNumber + chunk)
+		}
+	}
 }
 
 type searchResult struct {
@@ -324,22 +386,10 @@ func colorize(text string, tag string) string {
 	return text
 }
 
-// TODO slighly inefficient (wasted computations)
-func padLineNumber(number int, maxNumber int) string {
+func padLineNumber(number int, maxDigits int) string {
 	strNumber := fmt.Sprint(number)
-	strMaxNumber := fmt.Sprint(maxNumber)
-	pad := strings.Repeat(" ", len(strMaxNumber)-len(strNumber))
-	return fmt.Sprintf("[Line %s%d] ", pad, number)
-}
-
-func prettiyfyLine(text string, tag string, style Style) string {
-	prettyTag := BoldStyle.Render(emojify(tag))
-	text = " " + text
-	if style == FullStyle {
-		prettyTag = colorize(prettyTag, tag)
-		text = colorize(text, tag)
-	}
-	return prettyTag + text
+	pad := strings.Repeat(" ", maxDigits-len(strNumber))
+	return fmt.Sprintf("  [Line %s%d] ", pad, number)
 }
 
 var OldCommitStyle = BoldStyle.Copy().Foreground(lipgloss.Color("#dadada")).Background(lipgloss.Color("#d70000"))
@@ -370,23 +420,14 @@ const STYLE = FullStyle // TODO parameter
 const AGELIMIT = 30     // TODO parameter
 
 func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
+	width := getWidth()
+	fmt.Println(width)
 	for result := range searchResults {
 		fmt.Println(stylizeFilename(result.Path, len(result.Lines), STYLE))
-		gb, gb_err := BlameFile(result.Path)
+		gb, _ := BlameFile(result.Path)
+		maxLineNumber := result.MaxLineNumber()
 		for _, line := range result.Lines {
-			text := prettiyfyLine(line.text, line.tag, STYLE)
-			lineNumber := padLineNumber(line.n, result.MaxLineNumber())
-			var blame *LineBlame
-			var err error
-			if gb_err == nil {
-				blame, err = gb.BlameLine(line.n)
-			}
-			if gb_err == nil && err == nil {
-				blameStr := prettiyfyBlame(blame, AGELIMIT, STYLE)
-				fmt.Println(lineNumber + text + " " + blameStr)
-			} else {
-				fmt.Println(lineNumber + text)
-			}
+			line.Render(width, gb, maxLineNumber, AGELIMIT, STYLE)
 		}
 		fmt.Println()
 		wgResult.Done()
