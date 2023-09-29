@@ -202,6 +202,14 @@ func getWidth() int {
 	return int(ws.Col)
 }
 
+func getLimitedWidth() int {
+	width := getWidth()
+	if width > 150 {
+		width = 150
+	}
+	return width
+}
+
 func main() {
 	var workers = flag.Int("w", 128, "[debug] set number of search workers")
 	flag.Parse()
