@@ -97,7 +97,12 @@ func truncateName(name string, maxLength int) string {
 	truncated := []string{}
 	for i := len(words) - 1; i >= 0; i-- {
 		if totalLen > maxLength {
-			truncated = append(truncated, string(words[i][0])) // First letter
+			if i == 0 {
+				remLen := maxLength - 2*len(truncated)
+				truncated = append(truncated, words[i][0:remLen]) // Truncate if first name
+			} else {
+				truncated = append(truncated, string(words[i][0])) // First letter
+			}
 			totalLen -= len(words[i]) - 2
 		} else {
 			truncated = append(truncated, words[i])
