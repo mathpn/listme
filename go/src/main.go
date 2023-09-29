@@ -29,7 +29,7 @@ import (
 
 var tags = []string{"BUG", "FIXME", "XXX", "TODO", "HACK", "OPTIMIZE", "NOTE"}
 
-const maxAuthorLength = 22
+const maxAuthorLength = 24
 
 func BlameFile(path string) (*GitBlame, error) {
 	absolutePath, err := filepath.Abs(path)
@@ -394,7 +394,6 @@ func padLineNumber(number int, maxDigits int) string {
 
 var OldCommitStyle = BoldStyle.Copy().Foreground(lipgloss.Color("#dadada")).Background(lipgloss.Color("#d70000"))
 
-// TODO right-align blame
 func prettiyfyBlame(blame *LineBlame, ageLimit int, style Style) string {
 	if style == PlainStyle {
 		return ""
@@ -410,7 +409,7 @@ func prettiyfyBlame(blame *LineBlame, ageLimit int, style Style) string {
 	diff := currentDate.Sub(date)
 	maxAge := 30 * 24 * time.Hour
 	if diff > maxAge {
-		blameStr := fmt.Sprintf("[☠ OLD %s]", blame.Author)
+		blameStr := fmt.Sprintf("[OLD %s]", blame.Author)
 		return OldCommitStyle.Render(blameStr)
 	}
 	return blameStr
