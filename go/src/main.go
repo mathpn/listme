@@ -12,14 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"time"
 
 	"regexp"
 	"strings"
 	"sync"
-
-	// regexp "github.com/wasilibs/go-re2" // TODO decide between both libraries
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/go-git/go-git/v5"
@@ -286,18 +285,53 @@ func (l *matchLine) Render(width int, gb *GitBlame, maxLineNumber int, ageLimit 
 }
 
 type searchResult struct {
-	Path  string
-	Lines []*matchLine
+	path  string
+	lines []*matchLine
+	blame *GitBlame
 }
 
-func (r *searchResult) MaxLineNumber() int {
+func (r *searchResult) maxLineNumber() int {
 	max := 0
-	for _, line := range r.Lines {
+	for _, line := range r.lines {
 		if line.n > max {
 			max = line.n
 		}
 	}
 	return max
+}
+
+var BorderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).MarginLeft(2)
+
+func (r *searchResult) printBox() {
+	counter := make(map[string]int, len(tags))
+	for i := 0; i < len(r.lines); i++ {
+		counter[r.lines[i].tag]++
+	}
+	if len(counter) < 2 {
+		return
+	}
+
+	tags := make([]string, 0, len(counter))
+	for tag := range counter {
+		tags = append(tags, tag)
+	}
+
+	sort.Strings(tags)
+	boxStr := " "
+	for _, tag := range tags {
+		boxStr += colorize(fmt.Sprintf(" %s %d ", emojify(tag), counter[tag]), tag)
+	}
+	fmt.Println(BorderStyle.Render(boxStr + " "))
+}
+
+func (r *searchResult) Render(width int) {
+	fmt.Println(stylizeFilename(r.path, len(r.lines), STYLE))
+	r.printBox()
+	maxLineNumber := r.maxLineNumber()
+	for _, line := range r.lines {
+		line.Render(width, r.blame, maxLineNumber, AGELIMIT, STYLE)
+	}
+	fmt.Println()
 }
 
 type Style int
@@ -432,16 +466,9 @@ const STYLE = FullStyle // TODO parameter
 const AGELIMIT = 30     // TODO parameter
 
 func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
-	width := getWidth()
-	fmt.Println(width)
+	width := getLimitedWidth()
 	for result := range searchResults {
-		fmt.Println(stylizeFilename(result.Path, len(result.Lines), STYLE))
-		gb, _ := BlameFile(result.Path)
-		maxLineNumber := result.MaxLineNumber()
-		for _, line := range result.Lines {
-			line.Render(width, gb, maxLineNumber, AGELIMIT, STYLE)
-		}
-		fmt.Println()
+		result.Render(width)
 		wgResult.Done()
 	}
 }
@@ -499,13 +526,13 @@ func searchWorker(jobs chan *searchJob, searchResults chan *searchResult, matche
 			if len(match) >= 3 {
 				line := matchLine{n: line, tag: string(match[1]), text: string(match[2])}
 				lines = append(lines, &line)
-				// fmt.Printf("%v\n", line)
 			}
 			line++
 		}
 		if len(lines) > 0 {
 			wgResult.Add(1)
-			searchResults <- &searchResult{Path: job.path, Lines: lines}
+			gb, _ := BlameFile(job.path)
+			searchResults <- &searchResult{path: job.path, lines: lines, blame: gb}
 		}
 		wg.Done()
 	}
