@@ -209,12 +209,19 @@ func getLimitedWidth() int {
 }
 
 func main() {
-	var workers = flag.Int("w", 128, "[debug] set number of search workers")
+	fi, _ := os.Stdout.Stat()
+	var style Style
+	style = FullStyle
+	if (fi.Mode() & os.ModeCharDevice) == 0 {
+		style = PlainStyle
+	}
+	var workers = flag.Int("w", 128, "set number of search workers")
 	flag.Parse()
 
 	query, path := parseArgs(flag.Args())
 	opt := &Options{
 		Workers: *workers,
+		Style:   style,
 	}
 
 	r, err := regexp.Compile(query)
@@ -228,6 +235,7 @@ func main() {
 
 type Options struct {
 	Workers int
+	Style   Style
 }
 
 type searchJob struct {
@@ -270,7 +278,7 @@ func (l *matchLine) Render(width int, gb *GitBlame, maxLineNumber int, ageLimit 
 				blame, err = gb.BlameLine(l.n)
 			}
 			if gb != nil && err == nil {
-				blameStr := prettiyfyBlame(blame, ageLimit, STYLE)
+				blameStr := prettiyfyBlame(blame, ageLimit, style)
 				fmt.Println(lineNumber + chunk + " " + blameStr)
 			} else {
 				fmt.Println(lineNumber + chunk)
@@ -281,6 +289,10 @@ func (l *matchLine) Render(width int, gb *GitBlame, maxLineNumber int, ageLimit 
 			fmt.Println(lineNumber + chunk)
 		}
 	}
+}
+
+func (l *matchLine) PlainRender(path string) {
+	fmt.Printf("%s:%d:%s:%s\n", path, l.n, l.tag, l.text)
 }
 
 type searchResult struct {
@@ -328,15 +340,22 @@ func (r *searchResult) printBox() {
 	fmt.Println(BorderStyle.Render(boxStr + " "))
 }
 
-func (r *searchResult) Render(width int) {
-	path := shortenFilepath(r.path, r.rootPath)
-	fmt.Println(stylizeFilename(path, len(r.lines), STYLE))
-	r.printBox()
-	maxLineNumber := r.maxLineNumber()
-	for _, line := range r.lines {
-		line.Render(width, r.blame, maxLineNumber, AGELIMIT, STYLE)
+func (r *searchResult) Render(width int, style Style) {
+	switch style {
+	case PlainStyle:
+		for _, line := range r.lines {
+			line.PlainRender(r.path)
+		}
+	default:
+		path := shortenFilepath(r.path, r.rootPath)
+		fmt.Println(stylizeFilename(path, len(r.lines), style))
+		r.printBox()
+		maxLineNumber := r.maxLineNumber()
+		for _, line := range r.lines {
+			line.Render(width, r.blame, maxLineNumber, AGELIMIT, style)
+		}
+		fmt.Println()
 	}
-	fmt.Println()
 }
 
 type Style int
@@ -347,17 +366,17 @@ const (
 	PlainStyle
 )
 
-func Search(path string, regex *regexp.Regexp, matcher gitignore.Matcher, debug *Options) {
+func Search(path string, regex *regexp.Regexp, matcher gitignore.Matcher, opt *Options) {
 	searchJobs := make(chan *searchJob)
 	searchResults := make(chan *searchResult)
 
 	var wg sync.WaitGroup
 	var wgResult sync.WaitGroup
-	for w := 0; w < debug.Workers; w++ {
+	for w := 0; w < opt.Workers; w++ {
 		go searchWorker(path, searchJobs, searchResults, matcher, &wg, &wgResult)
 	}
 
-	go PrintResult(searchResults, &wgResult)
+	go PrintResult(searchResults, &wgResult, opt)
 
 	filepath.WalkDir(
 		path,
@@ -470,10 +489,10 @@ func prettiyfyBlame(blame *LineBlame, ageLimit int, style Style) string {
 const STYLE = FullStyle // TODO parameter
 const AGELIMIT = 30     // TODO parameter
 
-func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup) {
+func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, opt *Options) {
 	width := getLimitedWidth()
 	for result := range searchResults {
-		result.Render(width)
+		result.Render(width, opt.Style)
 		wgResult.Done()
 	}
 }
