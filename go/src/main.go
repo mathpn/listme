@@ -364,7 +364,11 @@ func (r *searchResult) maxLineNumber() int {
 var BorderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).MarginLeft(2)
 
 func shortenFilepath(path string, rootPath string) string {
-	return strings.Trim(strings.Replace(path, rootPath, "", 1), string(filepath.Separator))
+	shortPath := strings.Trim(strings.Replace(path, rootPath, "", 1), string(filepath.Separator))
+	if shortPath == "" {
+		shortPath = filepath.Base(path)
+	}
+	return shortPath
 }
 
 func (r *searchResult) printBox() {
