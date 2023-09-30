@@ -207,7 +207,16 @@ func getLimitedWidth() int {
 	return width
 }
 
+var tagValRegex = regexp.MustCompile(`^(\w+)$`)
+
 func main() {
+	for _, tag := range tags {
+		match := tagValRegex.MatchString(tag)
+		if !match {
+			panic("provided tags must be non-empty and contain only alphanumeric or underscore characters")
+		}
+	}
+
 	fi, _ := os.Stdout.Stat()
 	var style Style
 	style = FullStyle
