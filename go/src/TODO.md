@@ -3,7 +3,7 @@
 [x] ignore .gitignore paths
 [x] parse git blame
 [x] pretty output
-[ ] shorten filepath
+[x] shorten filepath
 [ ] plain style support
 [ ] CLI options
 [ ] test cross-platform compatibility
