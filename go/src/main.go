@@ -270,9 +270,12 @@ func NewMatcher(path string, globPattern string) Matcher {
 	gitMatcher, _ := LoadGitignore(path)
 	return &matcher{gitignore: gitMatcher, glob: globPattern}
 }
+
 type Options struct {
-	Workers int
-	Style   Style
+	Workers  int
+	Style    Style
+	AgeLimit int
+	Summary  bool
 }
 
 type searchJob struct {
@@ -403,14 +406,14 @@ const (
 	PlainStyle
 )
 
-func Search(path string, regex *regexp.Regexp, matcher gitignore.Matcher, opt *Options) {
+func Search(path string, regex *regexp.Regexp, matcher Matcher, opt *Options) {
 	searchJobs := make(chan *searchJob)
 	searchResults := make(chan *searchResult)
 
 	var wg sync.WaitGroup
 	var wgResult sync.WaitGroup
 	for w := 0; w < opt.Workers; w++ {
-		go searchWorker(path, searchJobs, searchResults, matcher, &wg, &wgResult)
+		go SearchWorker(path, searchJobs, searchResults, matcher, &wg, &wgResult)
 	}
 
 	go PrintResult(searchResults, &wgResult, opt)
@@ -548,24 +551,13 @@ func walk(path string, d fs.DirEntry, err error, regex *regexp.Regexp, searchJob
 	return nil
 }
 
-func searchWorker(
+func SearchWorker(
 	rootPath string, jobs chan *searchJob, searchResults chan *searchResult,
-	matcher gitignore.Matcher, wg *sync.WaitGroup, wgResult *sync.WaitGroup,
+	matcher Matcher, wg *sync.WaitGroup, wgResult *sync.WaitGroup,
 ) {
 	for job := range jobs {
-		info, err := os.Stat(job.path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Printf("%s does not exist.\n", job.path)
-			} else {
-				fmt.Printf("Error checking %s: %v\n", job.path, err)
-			}
-			return
-		}
-
-		pathList := strings.Split(job.path, string(filepath.Separator))
-		if matcher != nil && matcher.Match(pathList, info.IsDir()) {
-			// fmt.Printf("skipping %s due to .gitignore\n", job.path)
+		if !matcher.Match(job.path) {
+			// fmt.Printf("skipping %s due to .gitignore or glob pattern\n", job.path)
 			wg.Done()
 			continue
 		}
