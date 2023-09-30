@@ -3,8 +3,10 @@ module main.go
 go 1.20
 
 require (
+	github.com/akamensky/argparse v1.4.0
 	github.com/charmbracelet/lipgloss v0.8.0
 	github.com/go-git/go-git/v5 v5.9.0
+	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
 	golang.org/x/sys v0.12.0
 )
 
