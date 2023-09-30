@@ -3,29 +3,30 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
-	"time"
-
-	"regexp"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/akamensky/argparse"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
+	logging "github.com/op/go-logging"
 	"golang.org/x/sys/unix"
 )
 
+var log = logging.MustGetLogger("listme")
+var format = logging.MustStringFormatter(`%{color}%{level}%{color:reset}: %{message}`)
 var tags = []string{"BUG", "FIXME", "XXX", "TODO", "HACK", "OPTIMIZE", "NOTE"}
 
 const maxAuthorLength = 24
@@ -55,20 +56,13 @@ func BlameFile(path string) (*GitBlame, error) {
 		return nil, err
 	}
 
-	blameChannel := make(chan []*LineBlame, 1)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		parseGitBlame(stdout, blameChannel)
-	}()
-
-	wg.Wait()
+	blames := parseGitBlame(stdout)
 	if err := cmd.Wait(); err != nil {
-		return nil, fmt.Errorf("git blame failed: %v\n%s", err, stderr.String())
+		err = fmt.Errorf("git blame failed: %v\n%s", err, stderr.String())
+		log.Debug(err)
+		return nil, err
 	}
 
-	blames := <-blameChannel
 	return &GitBlame{blames: blames}, nil
 }
 
@@ -84,7 +78,9 @@ type GitBlame struct {
 func (b *GitBlame) BlameLine(line int) (*LineBlame, error) {
 	line = line - 1
 	if line < 0 || line >= len(b.blames) {
-		return nil, fmt.Errorf("line out of range")
+		err := fmt.Errorf("line out of range")
+		log.Debug(err)
+		return nil, err
 	}
 	return b.blames[line], nil
 }
@@ -115,9 +111,9 @@ func truncateName(name string, maxLength int) string {
 	return strings.Join(truncated, " ")
 }
 
-func parseGitBlame(out io.Reader, blameChannel chan []*LineBlame) {
+func parseGitBlame(out io.Reader) []*LineBlame {
 	var blames []*LineBlame
-	lr := bufio.NewReader(out) // XXX NewReaderSize?
+	lr := bufio.NewReader(out)
 	s := bufio.NewScanner(lr)
 
 	var currentBlame *LineBlame
@@ -145,19 +141,15 @@ func parseGitBlame(out io.Reader, blameChannel chan []*LineBlame) {
 	if currentBlame != nil {
 		blames = append(blames, currentBlame)
 	}
-
-	blameChannel <- blames
+	return blames
 }
 
-func parseArgs(flagArgs []string) (string, string) {
-	if len(flagArgs) < 1 {
-		log.Fatal("usage: listme <path>")
-	}
-	tags_regex := fmt.Sprintf(
+func getRegex(tags []string) string {
+	tagsRegex := fmt.Sprintf(
 		`(?m)(?:^|\s*(?:(?:#+|//+|<!--|--|/*|"""|''')+\s*)+)\s*(?:^|\b)(%s)[\s:;-]+(.+?)(?:$|-->|#}}|\*/|--}}|}}|#+|#}|"""|''')*$`,
 		strings.Join(tags, "|"),
 	)
-	return tags_regex, flagArgs[0]
+	return tagsRegex
 }
 
 func LoadGitignore(path string) (gitignore.Matcher, error) {
@@ -209,36 +201,88 @@ func getLimitedWidth() int {
 
 var tagValRegex = regexp.MustCompile(`^(\w+)$`)
 
-func main() {
+func validateTags(tags []string) error {
 	for _, tag := range tags {
 		match := tagValRegex.MatchString(tag)
 		if !match {
-			panic("provided tags must be non-empty and contain only alphanumeric or underscore characters")
+			return fmt.Errorf("provided tags must be non-empty and contain only alphanumeric or underscore characters")
 		}
+	}
+	return nil
+}
+
+func parseStyle(bw bool, plain bool) (Style, error) {
+	if bw && plain {
+		return -1, fmt.Errorf("only one style can be specified")
 	}
 
 	fi, _ := os.Stdout.Stat()
-	var style Style
-	style = FullStyle
 	if (fi.Mode() & os.ModeCharDevice) == 0 {
-		style = PlainStyle
+		return PlainStyle, nil
+	} else if bw {
+		return BWStyle, nil
+	} else if plain {
+		return PlainStyle, nil
 	}
-	var workers = flag.Int("w", 128, "set number of search workers")
-	flag.Parse()
+	return FullStyle, nil
+}
 
-	query, path := parseArgs(flag.Args())
-	opt := &Options{
-		Workers: *workers,
-		Style:   style,
+func main() {
+	parser := argparse.NewParser("listme", "Summarize you FIXME, TODO, XXX (and other tags) comments so you don't forget them.") // TODO description
+	path := parser.StringPositional(&argparse.Options{Help: "Path to folder or file to be searched. Search is recursive."})
+	workers := parser.Int("w", "workers", &argparse.Options{Default: 128, Help: "number of search workers"})
+	tags := parser.StringList("T", "tags", &argparse.Options{Default: tags, Validate: validateTags, Help: "tags to search for"})
+	glob := parser.String("g", "glob", &argparse.Options{Default: "*.*", Help: "Glob pattern to filter files in the search. Use a single-quoted string. Example: '*.go'"})
+	ageLimit := parser.Int("l", "age-limit", &argparse.Options{Default: 60, Help: "Age limit for commits in days. Commits older than this limit are marked"})
+	fullPath := parser.Flag("F", "full-path", &argparse.Options{Help: "Print full absolute path of the files"})
+	noAuthor := parser.Flag("A", "no-author", &argparse.Options{Help: "Do not print git author information"})
+	noSummary := parser.Flag("S", "no-summary", &argparse.Options{Help: "Do not print summary box for each file"})
+	bw := parser.Flag("b", "bw", &argparse.Options{Help: "Use black and white style"})
+	plain := parser.Flag("p", "plain", &argparse.Options{Help: "Use plain style. Ideal for machine consumption. Used by default when redirecting the output"})
+	warning := parser.Flag("v", "verbose", &argparse.Options{Help: "Add warning verbosity"})
+	debug := parser.Flag("d", "debug", &argparse.Options{Help: "Add debug verbosity"})
+
+	err := parser.Parse(os.Args)
+	if err != nil {
+		fmt.Print(parser.Usage(err))
 	}
 
-	r, err := regexp.Compile(query)
+	logging.SetFormatter(format)
+	b := logging.NewLogBackend(os.Stdout, "", 0)
+	bFormatter := logging.NewBackendFormatter(b, format)
+	logging.SetBackend(bFormatter)
+	logging.SetLevel(logging.ERROR, "")
+	if *warning {
+		logging.SetLevel(logging.WARNING, "")
+	}
+	if *debug {
+		logging.SetLevel(logging.DEBUG, "")
+	}
+
+	style, err := parseStyle(*bw, *plain)
+	if err != nil {
+		panic(err)
+	}
+
+	tagRegex := getRegex(*tags)
+	r, err := regexp.Compile(tagRegex)
 	if err != nil {
 		log.Fatalf("Bad regex: %s", err)
 	}
 
-	matcher := NewMatcher(path, "*.*")
-	Search(path, r, matcher, opt)
+	matcher := NewMatcher(*path, *glob)
+	params := &SearchParams{
+		RootPath: filepath.ToSlash(*path),
+		Matcher:  matcher,
+		Workers:  *workers,
+		Style:    style,
+		AgeLimit: *ageLimit,
+		FullPath: *fullPath,
+		Summary:  !*noSummary,
+		Author:   !*noAuthor,
+	}
+
+	Search(r, params)
 }
 
 type Matcher interface {
@@ -251,12 +295,12 @@ type matcher struct {
 }
 
 func (m *matcher) Match(path string) bool {
-	info, err := os.Stat(path)
+	info, err := os.Stat(filepath.FromSlash(path))
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Printf("%s does not exist.\n", path)
+			log.Warningf("%s does not exist.\n", path)
 		} else {
-			fmt.Printf("Error checking %s: %v\n", path, err)
+			log.Errorf("Error checking %s: %v\n", path, err)
 		}
 		return false
 	}
@@ -275,16 +319,24 @@ func (m *matcher) Match(path string) bool {
 	return false
 }
 
+func MatchGit(path string) bool {
+	return strings.Contains(path, "/.git/")
+}
+
 func NewMatcher(path string, globPattern string) Matcher {
 	gitMatcher, _ := LoadGitignore(path)
 	return &matcher{gitignore: gitMatcher, glob: globPattern}
 }
 
-type Options struct {
+type SearchParams struct {
+	RootPath string
+	Matcher  Matcher
 	Workers  int
 	Style    Style
 	AgeLimit int
+	FullPath bool
 	Summary  bool
+	Author   bool
 }
 
 type searchJob struct {
@@ -371,7 +423,7 @@ func shortenFilepath(path string, rootPath string) string {
 	return shortPath
 }
 
-func (r *searchResult) printBox() {
+func (r *searchResult) printSummary(style Style) {
 	counter := make(map[string]int, len(tags))
 	for i := 0; i < len(r.lines); i++ {
 		counter[r.lines[i].tag]++
@@ -388,24 +440,30 @@ func (r *searchResult) printBox() {
 	sort.Strings(tags)
 	boxStr := " "
 	for _, tag := range tags {
-		boxStr += colorize(fmt.Sprintf(" %s %d ", emojify(tag), counter[tag]), tag)
+		tagStr := fmt.Sprintf(" %s %d ", emojify(tag), counter[tag])
+		if style == FullStyle {
+			tagStr = colorize(tagStr, tag)
+		}
+		boxStr += tagStr
 	}
 	fmt.Println(BorderStyle.Render(boxStr + " "))
 }
 
-func (r *searchResult) Render(width int, style Style) {
-	switch style {
+func (r *searchResult) Render(width int, params *SearchParams) {
+	switch params.Style {
 	case PlainStyle:
 		for _, line := range r.lines {
 			line.PlainRender(r.path)
 		}
 	default:
 		path := shortenFilepath(r.path, r.rootPath)
-		fmt.Println(stylizeFilename(path, len(r.lines), style))
-		r.printBox()
+		fmt.Println(stylizeFilename(path, len(r.lines), params.Style))
+		if params.Summary {
+			r.printSummary(params.Style)
+		}
 		maxLineNumber := r.maxLineNumber()
 		for _, line := range r.lines {
-			line.Render(width, r.blame, maxLineNumber, AGELIMIT, style)
+			line.Render(width, r.blame, maxLineNumber, params.AgeLimit, params.Style)
 		}
 		fmt.Println()
 	}
@@ -419,20 +477,20 @@ const (
 	PlainStyle
 )
 
-func Search(path string, regex *regexp.Regexp, matcher Matcher, opt *Options) {
+func Search(regex *regexp.Regexp, params *SearchParams) {
 	searchJobs := make(chan *searchJob)
 	searchResults := make(chan *searchResult)
 
 	var wg sync.WaitGroup
 	var wgResult sync.WaitGroup
-	for w := 0; w < opt.Workers; w++ {
-		go SearchWorker(path, searchJobs, searchResults, matcher, &wg, &wgResult)
+	for w := 0; w < params.Workers; w++ {
+		go SearchWorker(params, searchJobs, searchResults, &wg, &wgResult)
 	}
 
-	go PrintResult(searchResults, &wgResult, opt)
+	go PrintResult(searchResults, &wgResult, params)
 
 	filepath.WalkDir(
-		path,
+		params.RootPath,
 		func(path string, d fs.DirEntry, err error) error { return walk(path, d, err, regex, searchJobs, &wg) },
 	)
 	wg.Wait()
@@ -519,10 +577,6 @@ func padLineNumber(number int, maxDigits int) string {
 var OldCommitStyle = BoldStyle.Copy().Foreground(lipgloss.Color("#dadada")).Background(lipgloss.Color("#d70000"))
 
 func prettiyfyBlame(blame *LineBlame, ageLimit int, style Style) string {
-	if style == PlainStyle {
-		return ""
-	}
-
 	blameStr := fmt.Sprintf("[%s]", blame.Author)
 	if blame.Timestamp == 0 {
 		return blameStr
@@ -533,19 +587,18 @@ func prettiyfyBlame(blame *LineBlame, ageLimit int, style Style) string {
 	diff := currentDate.Sub(date)
 	maxAge := time.Duration(ageLimit) * 24 * time.Hour
 	if diff > maxAge {
-		blameStr := fmt.Sprintf("[OLD %s]", blame.Author)
-		return OldCommitStyle.Render(blameStr)
+		blameStr = fmt.Sprintf("[OLD %s]", blame.Author)
+		if style == FullStyle {
+			blameStr = OldCommitStyle.Render(blameStr)
+		}
 	}
 	return blameStr
 }
 
-const STYLE = FullStyle // TODO parameter
-const AGELIMIT = 30     // TODO parameter
-
-func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, opt *Options) {
+func PrintResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, params *SearchParams) {
 	width := getLimitedWidth()
 	for result := range searchResults {
-		result.Render(width, opt.Style)
+		result.Render(width, params)
 		wgResult.Done()
 	}
 }
@@ -565,16 +618,21 @@ func walk(path string, d fs.DirEntry, err error, regex *regexp.Regexp, searchJob
 }
 
 func SearchWorker(
-	rootPath string, jobs chan *searchJob, searchResults chan *searchResult,
-	matcher Matcher, wg *sync.WaitGroup, wgResult *sync.WaitGroup,
+	params *SearchParams, jobs chan *searchJob, searchResults chan *searchResult,
+	wg *sync.WaitGroup, wgResult *sync.WaitGroup,
 ) {
 	for job := range jobs {
-		if !matcher.Match(job.path) {
-			// fmt.Printf("skipping %s due to .gitignore or glob pattern\n", job.path)
+		if MatchGit(job.path) {
+			log.Debugf("skipping %s since it's in a .git directory\n", job.path)
 			wg.Done()
 			continue
 		}
-		f, err := os.Open(job.path)
+		if !params.Matcher.Match(job.path) {
+			log.Warningf("skipping %s due to .gitignore or glob pattern\n", job.path)
+			wg.Done()
+			continue
+		}
+		f, err := os.Open(filepath.FromSlash(job.path))
 		if err != nil {
 			log.Fatalf("couldn't open path %s: %s\n", job.path, err)
 		}
@@ -586,8 +644,8 @@ func SearchWorker(
 		for scanner.Scan() {
 			text := scanner.Bytes()
 
-			if mimeType := http.DetectContentType(text); strings.Split(mimeType, ";")[0] != "text/plain" {
-				// fmt.Printf("skipping non-text file: %s | %s\n", job.path, mimeType)
+			if mimeType := http.DetectContentType(text); !strings.HasPrefix(strings.Split(mimeType, ";")[0], "text") {
+				log.Warningf("skipping non-text file of type %s: %s\n", mimeType, job.path)
 				break
 			}
 
@@ -600,8 +658,11 @@ func SearchWorker(
 		}
 		if len(lines) > 0 {
 			wgResult.Add(1)
-			gb, _ := BlameFile(job.path)
-			searchResults <- &searchResult{rootPath: rootPath, path: job.path, lines: lines, blame: gb}
+			var gb *GitBlame
+			if params.Author {
+				gb, _ = BlameFile(job.path)
+			}
+			searchResults <- &searchResult{rootPath: params.RootPath, path: job.path, lines: lines, blame: gb}
 		}
 		wg.Done()
 	}
