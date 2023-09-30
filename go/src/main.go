@@ -115,7 +115,6 @@ func truncateName(name string, maxLength int) string {
 	return strings.Join(truncated, " ")
 }
 
-// TODO truncate git author length
 func parseGitBlame(out io.Reader, blameChannel chan []*LineBlame) {
 	var blames []*LineBlame
 	lr := bufio.NewReader(out) // XXX NewReaderSize?
@@ -285,9 +284,10 @@ func (l *matchLine) Render(width int, gb *GitBlame, maxLineNumber int, ageLimit 
 }
 
 type searchResult struct {
-	path  string
-	lines []*matchLine
-	blame *GitBlame
+	rootPath string
+	path     string
+	lines    []*matchLine
+	blame    *GitBlame
 }
 
 func (r *searchResult) maxLineNumber() int {
@@ -301,6 +301,10 @@ func (r *searchResult) maxLineNumber() int {
 }
 
 var BorderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).MarginLeft(2)
+
+func shortenFilepath(path string, rootPath string) string {
+	return strings.Trim(strings.Replace(path, rootPath, "", 1), string(filepath.Separator))
+}
 
 func (r *searchResult) printBox() {
 	counter := make(map[string]int, len(tags))
@@ -325,7 +329,8 @@ func (r *searchResult) printBox() {
 }
 
 func (r *searchResult) Render(width int) {
-	fmt.Println(stylizeFilename(r.path, len(r.lines), STYLE))
+	path := shortenFilepath(r.path, r.rootPath)
+	fmt.Println(stylizeFilename(path, len(r.lines), STYLE))
 	r.printBox()
 	maxLineNumber := r.maxLineNumber()
 	for _, line := range r.lines {
@@ -349,7 +354,7 @@ func Search(path string, regex *regexp.Regexp, matcher gitignore.Matcher, debug 
 	var wg sync.WaitGroup
 	var wgResult sync.WaitGroup
 	for w := 0; w < debug.Workers; w++ {
-		go searchWorker(searchJobs, searchResults, matcher, &wg, &wgResult)
+		go searchWorker(path, searchJobs, searchResults, matcher, &wg, &wgResult)
 	}
 
 	go PrintResult(searchResults, &wgResult)
@@ -487,7 +492,10 @@ func walk(path string, d fs.DirEntry, err error, regex *regexp.Regexp, searchJob
 	return nil
 }
 
-func searchWorker(jobs chan *searchJob, searchResults chan *searchResult, matcher gitignore.Matcher, wg *sync.WaitGroup, wgResult *sync.WaitGroup) {
+func searchWorker(
+	rootPath string, jobs chan *searchJob, searchResults chan *searchResult,
+	matcher gitignore.Matcher, wg *sync.WaitGroup, wgResult *sync.WaitGroup,
+) {
 	for job := range jobs {
 		info, err := os.Stat(job.path)
 		if err != nil {
@@ -532,7 +540,7 @@ func searchWorker(jobs chan *searchJob, searchResults chan *searchResult, matche
 		if len(lines) > 0 {
 			wgResult.Add(1)
 			gb, _ := BlameFile(job.path)
-			searchResults <- &searchResult{path: job.path, lines: lines, blame: gb}
+			searchResults <- &searchResult{rootPath: rootPath, path: job.path, lines: lines, blame: gb}
 		}
 		wg.Done()
 	}
