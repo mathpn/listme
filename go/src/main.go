@@ -382,9 +382,9 @@ func stylizeFilename(file string, nComments int, style Style) string {
 	fname := styler.Render(fmt.Sprintf("• %s", file))
 	var comments string
 	if nComments > 1 {
-		comments = styler.Render(fmt.Sprintf("(%d comments)", nComments))
+		comments = fmt.Sprintf("(%d comments)", nComments)
 	} else {
-		comments = styler.Render(fmt.Sprintf("(%d comment)", nComments))
+		comments = fmt.Sprintf("(%d comment)", nComments)
 	}
 	return fname + " " + comments
 }
