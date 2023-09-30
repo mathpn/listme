@@ -157,11 +157,10 @@ func parseArgs(flagArgs []string) (string, string) {
 		`(?m)(?:^|\s*(?:(?:#+|//+|<!--|--|/*|"""|''')+\s*)+)\s*(?:^|\b)(%s)[\s:;-]+(.+?)(?:$|-->|#}}|\*/|--}}|}}|#+|#}|"""|''')*$`,
 		strings.Join(tags, "|"),
 	)
-	// fmt.Println(tags_regex)
 	return tags_regex, flagArgs[0]
 }
 
-func loadGitignore(path string) (gitignore.Matcher, error) {
+func LoadGitignore(path string) (gitignore.Matcher, error) {
 	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
 		return nil, err
@@ -172,11 +171,11 @@ func loadGitignore(path string) (gitignore.Matcher, error) {
 	}
 	rootDir := wt.Filesystem
 
-	pattern, err := gitignore.ReadPatterns(rootDir, []string{})
+	patterns, err := gitignore.ReadPatterns(rootDir, []string{})
 	if err != nil {
 		return nil, err
 	}
-	matcher := gitignore.NewMatcher(pattern)
+	matcher := gitignore.NewMatcher(patterns)
 	return matcher, nil
 }
 
@@ -229,10 +228,48 @@ func main() {
 		log.Fatalf("Bad regex: %s", err)
 	}
 
-	matcher, _ := loadGitignore(path)
+	matcher := NewMatcher(path, "*.*")
 	Search(path, r, matcher, opt)
 }
 
+type Matcher interface {
+	Match(path string) bool
+}
+
+type matcher struct {
+	gitignore gitignore.Matcher
+	glob      string
+}
+
+func (m *matcher) Match(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Printf("%s does not exist.\n", path)
+		} else {
+			fmt.Printf("Error checking %s: %v\n", path, err)
+		}
+		return false
+	}
+	pathList := strings.Split(path, string(filepath.Separator))
+	if m.gitignore != nil && m.gitignore.Match(pathList, info.IsDir()) {
+		return false
+	}
+	base := filepath.Base(path)
+	matched, err := filepath.Match(m.glob, base)
+	if err != nil {
+		return true
+	}
+	if matched {
+		return true
+	}
+	return false
+}
+
+func NewMatcher(path string, globPattern string) Matcher {
+	gitMatcher, _ := LoadGitignore(path)
+	return &matcher{gitignore: gitMatcher, glob: globPattern}
+}
 type Options struct {
 	Workers int
 	Style   Style
