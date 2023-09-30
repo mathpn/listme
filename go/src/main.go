@@ -270,7 +270,7 @@ func (l *matchLine) Render(width int, gb *GitBlame, maxLineNumber int, ageLimit 
 				blame, err = gb.BlameLine(l.n)
 			}
 			if gb != nil && err == nil {
-				blameStr := prettiyfyBlame(blame, AGELIMIT, STYLE)
+				blameStr := prettiyfyBlame(blame, ageLimit, STYLE)
 				fmt.Println(lineNumber + chunk + " " + blameStr)
 			} else {
 				fmt.Println(lineNumber + chunk)
@@ -459,7 +459,7 @@ func prettiyfyBlame(blame *LineBlame, ageLimit int, style Style) string {
 	currentDate := time.Now()
 
 	diff := currentDate.Sub(date)
-	maxAge := 30 * 24 * time.Hour
+	maxAge := time.Duration(ageLimit) * 24 * time.Hour
 	if diff > maxAge {
 		blameStr := fmt.Sprintf("[OLD %s]", blame.Author)
 		return OldCommitStyle.Render(blameStr)
