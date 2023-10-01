@@ -146,13 +146,17 @@ func (r *searchResult) printSummary(style pretty.Style) {
 }
 
 func (r *searchResult) Render(width int, params *searchParams) {
+	path := r.path
+	if !params.fullPath {
+		path = shortenFilepath(path, r.rootPath)
+	}
 	switch params.style {
 	case pretty.PlainStyle:
 		for _, line := range r.lines {
-			line.PlainRender(r.path)
+			line.PlainRender(path)
 		}
 	default:
-		fmt.Println(pretty.StylizeFilename(r.rootPath, r.path, len(r.lines), params.style))
+		fmt.Println(pretty.StylizeFilename(path, len(r.lines), params.style))
 		if params.summary {
 			r.printSummary(params.style)
 		}

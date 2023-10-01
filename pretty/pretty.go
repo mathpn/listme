@@ -45,13 +45,6 @@ func PadLineNumber(number int, maxDigits int) string {
 	return fmt.Sprintf("  [Line %s%d] ", pad, number)
 }
 
-func shortenFilepath(path string, rootPath string) string {
-	shortPath := strings.Trim(strings.Replace(path, rootPath, "", 1), string(filepath.Separator))
-	if shortPath == "" {
-		shortPath = filepath.Base(path)
-	}
-	return shortPath
-}
 
 func StylizeFilename(rootPath string, file string, nComments int, style Style) string {
 	file = shortenFilepath(file, rootPath)
