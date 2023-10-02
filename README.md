@@ -1,65 +1,87 @@
 # listme
 
-Summarize you FIXME, TODO, XXX (and other tags) comments so you don't forget them.
+**Keep track of your code comments with ease.**
 
 ## Features
 
-- ⚡ Blazingly fast recursive search! Thanks to [ripgrep](https://github.com/BurntSushi/ripgrep), massive codebases can be scanned very quickly.
-- 🌈 A nice and pretty summary with comment counts per tag is printed for each file.
-- 🏷 Tags can be customized by the user.
-- 🖨 Print the git author of each message, highlighting old commits.
+- ⚡ **Fast & Recursive**: quickly search your codebase, even through nested directories.
+- 🌈 **Tag Summaries**: get a neat summary with the count of each type of comment tag.
+- 🏷 **Customize Tags**: tailor your comment tags to match your workflow.
+- 🖨 **Git Integration**: view the Git author of each comment, marking old commits.
 
-This project was inspired by practical needs and by [fixme](https://github.com/JohnPostlethwait/fixme). Since fixme is no longer maintained, it makes sense to have a new package (this time written in Python using ripgrep written in Rust) with some new features.
+## Why `listme`?
+
+Managing code comments can be messy, especially in larger projects. `listme` helps you stay organized by summarizing your FIXME, TODO, XXX, and other tags, so nothing slips through the cracks.
+
+This project was inspired by [`fixme`](https://github.com/JohnPostlethwait/fixme) but brings some additional features. Since `fixme` is no longer actively maintained, `listme` provides a fresh alternative.
+
+Originally written in Python, `listme` was later rewritten in [Go](https://go.dev/) to eliminate dependencies and boost performance.
+
 
 ## Installation
 
-This package requires Python 3.8+, a recent version of [git](https://git-scm.com/) and [ripgrep](https://github.com/BurntSushi/ripgrep) (13.0+). Both git and ripgrep should be available in your PATH. Then install with pip:
+Ensure you have a recent version of [git](https://git-scm.com/) available in your PATH.
 
-> pip install listme
+### Option 1: `go install`
+
+```bash
+go install github.com/mathpn/listme
+```
+
+### Option 2: pre-compiled binaries
+
+Visit the _releases_ section to download pre-compiled binaries. Once downloaded, place the binary in a directory on your PATH.
 
 
-## Usage
+## Getting Started
 
-Simply call listme with the folder or file of interest as the first argument.
+Just call listme with the folder or file you want to inspect as the first argument.
 
 ```bash
 listme .
 ```
 
-You should see an output like this:
+You'll see an output like this:
 
 ![Example output screenshot](https://github.com/mathpn/listme/raw/main/screenshots/example_output.png?raw=true)
 
-Ripgrep uses ``.gitignore`` files present in your folders to ignore certain directories and files. If you want to add filters on top of ripgrep, use the ``--glob (-g)`` option.
+`listme` respects your project's `.gitignore` files to exclude specific directories and files. If you need additional filtering, use the `--glob (-g)` option.
 
-Comments that were commited too long ago (limit set be the ``--age-limit`` parameter) are maked as old before the author's name: ``[☠ OLD John Doe]``
+Comments from commits older than a certain age (set with `--age-limit`) are tagged as old, indicating their age along with the author's name, e.g., `[OLD John Doe]`.
 
 
-### Configuration
+### Font and terminal support
 
-Most terminals should support all the Unicode symbols used in this project. If not, a patched font (e.g. one of [nerd fonts](https://www.nerdfonts.com/font-downloads)) is higly recommended. Still, to ensure compatibility across many terminal emulators and fonts, a configuration wizard will pop up the first time you run listme asking if some symbols are rendered correctly.
-
-To run the configuration wizard again, simply run:
-
-> listme-config
+Most modern terminals support the Unicode symbols used in listme. For the best experience, we recommend using a patched font (e.g., one from **[nerd fonts](https://www.nerdfonts.com/)**).
 
 
 ### Options
 
-- **path**: Path to folder or file to scan for comments with tags.
-- **--tags (-T)**: The tags that will be searched, input should be separated by spaces. Tags are shown in the file summary in the order defined here. Default tags: BUG, FIXME, XXX, TODO, HACK, OPTIMIZE, NOTE.
-- **--glob (-g)**: Glob pattern to include/exclude files or folders in the search. Must be a single-quoted string. This argument is passed to ripgrep, so check [ripgrep documentation](https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md#manual-filtering-globs) for syntax details.
-- **--age-limit (-l)**: Age limit (commit age) for comments. Comments older than this limit are marked.
-- **--relative-path (-r)**: Use relative paths in the output. This is the default.
-- **--full-path (-R)**: Use full absolute paths in the output.
-- **--author (-a)**: Print git commit author names. This is the default.
-- **--no-author (-A)**: Do not print git commit author names.
-- **--summary (-s)**: Print a nice file summary. This is the default.
-- **--no-summary (-S)**: Do not print a nice file summary.
-- **--verbose (-v)**: print files which were ignored due to parsing errors.
+- **path**: path to folder or file to be searched. Search is recursive.
+- **--tags (-T)**: Define the tags to search for, separated by spaces. Default tags include BUG, FIXME, XXX, TODO, HACK, OPTIMIZE, and NOTE.
+- **--glob (-g)**: Use a single-quoted glob pattern to filter files during the search (e.g., *.go).
+- **--age-limit (-l)**: Set the age limit for commits in days. Older commits are marked.
+- **--full-path (-F)**: Print the full absolute path of files.
+- **--no-author (-A)**: Exclude Git author information.
+- **--no-summary (-S)**: Skip the summary box for each file.
+- **--workers (-w)**: Specify the number of search workers (usually not necessary to change).
+- **--verbose (-v)**: Enable warning verbosity.
+- **--debug (-d)**: Enable debug verbosity.
 
 ### Style options
 
-The output can be printed in full (``--full``, the default), black-and-white (``-b``) or plain style (``-p``). Full style is recommended, and the only difference to black-and-white is (of course) colors.
+Choose your preferred style for output: colored (default), black-and-white (`-b`), or plain (`-p`). We recommend using the default style for the best experience.
 
-Plain style is aimed towards machine consumption. The format is basically a filename line followed by all the comments in the format ``TAG:text``. All comment lines are indented with one tab.
+The plain style is designed for machine consumption, using a format like `file:tag:text`. If you redirect listme's output, it will automatically switch to plain style.
+
+## Contributing
+
+`listme` is currently maintained by a single person. Contributions are greatly appreciated.
+
+### Contributing code
+
+To contribute, fork the repository, make your changes, and submit a pull request.
+
+### Filing issues
+
+If you encounter a bug or want to discuss an improvement, feel free to [file an issue](https://github.com/mathpn/listme/issues).
