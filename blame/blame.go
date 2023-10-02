@@ -16,8 +16,12 @@ import (
 
 var log = logging.MustGetLogger("listme")
 
+// Maximum length for the Git author string
 const MaxAuthorLength = 20
 
+// LineBlame contains Git blame information for a specific file line.
+//   - Author: author name
+//   - Timestamp: timestamp of commit
 type LineBlame struct {
 	Author    string
 	Timestamp int64
@@ -27,6 +31,8 @@ type GitBlame struct {
 	blames []*LineBlame
 }
 
+// BlameLine returns a LineBlame for the specified line if possible.
+// If the line is out of range, an error is returned.
 func (b *GitBlame) BlameLine(line int) (*LineBlame, error) {
 	line = line - 1
 	if line < 0 || line >= len(b.blames) {
@@ -96,6 +102,8 @@ func truncateName(name string, maxLength int) string {
 	return strings.Join(truncated, " ")
 }
 
+// BlameFile runs git blame for the provided path using the OS interface,
+// parses the output and returns a *GitBlame or error.
 func BlameFile(path string) (*GitBlame, error) {
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {

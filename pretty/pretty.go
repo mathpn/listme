@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Style used to print to stdout
 type Style int
 
 const (
@@ -36,24 +37,36 @@ var bugStyle = baseStyle.Copy().Foreground(lipgloss.Color("#eeeeee")).Background
 var noteStyle = baseStyle.Copy().Foreground(lipgloss.Color("#87af87"))
 var hackStyle = baseStyle.Copy().Foreground(lipgloss.Color("#d7d700"))
 
+// Bold returns the provided string with bold style
 func Bold(str string) string {
 	return boldCode + str + resetBold
 }
 
-func PadLineNumber(number int, maxDigits int) string {
+// PrettyLineNumber returns a string with the format
+//
+//	[Line 123]
+//
+// The string is padded according to the maximum number of digits (maxDigits)
+// to ensure vertical alignment between line numbers of the same file.
+func PrettyLineNumber(number int, maxDigits int) string {
 	strNumber := fmt.Sprint(number)
 	pad := strings.Repeat(" ", maxDigits-len(strNumber))
 	return fmt.Sprintf("  [Line %s%d] ", pad, number)
 }
 
-func StylizeFilename(file string, nComments int, style Style) string {
+// PrettyFilename returns a string with the format
+//
+//   - tests/generic_code.py (10 comments)
+//
+// The string if formatted according to the provided style (colorful or black-and-white).
+func PrettyFilename(path string, nComments int, style Style) string {
 	styler := baseStyle
 	if style == BWStyle {
 		styler = boldStyle
 	} else if style == FullStyle {
 		styler = filenameColorStyle
 	}
-	fname := styler.Render(fmt.Sprintf("• %s", file))
+	fname := styler.Render(fmt.Sprintf("• %s", path))
 	var comments string
 	if nComments > 1 {
 		comments = fmt.Sprintf("(%d comments)", nComments)
@@ -63,6 +76,7 @@ func StylizeFilename(file string, nComments int, style Style) string {
 	return fname + " " + comments
 }
 
+// Emojify prepends the tag string with an emoji
 func Emojify(tag string) string {
 	switch tag {
 	case "TODO":
@@ -83,6 +97,8 @@ func Emojify(tag string) string {
 	return "⚠ " + tag
 }
 
+// Colorize colorizes the provided text according to the tag and style.
+// If style != FullStyle, this function does nothing.
 func Colorize(text string, tag string, style Style) string {
 	if style != FullStyle {
 		return text
@@ -106,7 +122,16 @@ func Colorize(text string, tag string, style Style) string {
 	return text
 }
 
-func PrettifyBlame(blame *blame.LineBlame, ageLimit int, style Style) string {
+// PrettyBlame returns a string with the format
+//
+//	[John Doe]
+//
+// If the commit is older than ageLimit (in days), the format is
+//
+//	[OLD John Doe]
+//
+// Color is added according to the style.
+func PrettyBlame(blame *blame.LineBlame, ageLimit int, style Style) string {
 	blameStr := fmt.Sprintf("[%s]", blame.Author)
 	if blame.Timestamp == 0 {
 		return blameStr
@@ -125,7 +150,7 @@ func PrettifyBlame(blame *blame.LineBlame, ageLimit int, style Style) string {
 	return blameStr
 }
 
-func PrettifySummary(counter map[string]int, style Style) string {
+func PrettySummary(counter map[string]int, style Style) string {
 	tags := make([]string, 0, len(counter))
 	for tag := range counter {
 		tags = append(tags, tag)
@@ -143,6 +168,10 @@ func PrettifySummary(counter map[string]int, style Style) string {
 	return borderStyle.Render(boxStr + " ")
 }
 
+// GetStyle returns the style that should be used. FullStyle is the default.
+// If bw, then BWStyle. If plain, then PlainStyle.
+//
+// If the output (stdout) is redirected, PlainStyle is always used.
 func GetStyle(bw bool, plain bool) (Style, error) {
 	if bw && plain {
 		return -1, fmt.Errorf("only one style can be specified")

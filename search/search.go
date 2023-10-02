@@ -38,6 +38,8 @@ type searchParams struct {
 	author   bool
 }
 
+// NewSearchParams creates a searchParams struct with all the information required
+// to inspect a file or folder.
 func NewSearchParams(
 	path string, tags []string, workers int, style pretty.Style, ageLimit int,
 	fullPath bool, noSummary bool, noAuthor bool, glob string,
@@ -82,8 +84,9 @@ type matchLine struct {
 	text string
 }
 
-// adapted from https://codereview.stackexchange.com/questions/244435/word-wrap-in-go
-// to count emojis as 1 character and ignore ANSI escape sequences. It's much slower though
+// Wraps a long string on words with a max lineWidth measured in glyphemes.
+// Adapted from https://codereview.stackexchange.com/questions/244435/word-wrap-in-go
+// to count emojis as 1 character and ignore ANSI escape sequences. It's much slower though.
 func wordWrap(text string, lineWidth int) string {
 	wrap := make([]byte, 0, len(text)+2*len(text)/lineWidth)
 	eoLine := lineWidth
@@ -99,7 +102,6 @@ func wordWrap(text string, lineWidth int) string {
 				wl := utf8.RuneCountInString(removeANSIEscapeCodes(text[j:i]))
 				if running+wl >= eoLine {
 					wrap = append(wrap, '\n')
-					// eoLine = len(wrap) + lineWidth
 					running = 0
 				} else if len(wrap) > 0 {
 					wrap = append(wrap, ' ')
@@ -126,6 +128,8 @@ func removeANSIEscapeCodes(input string) string {
 	return cleaned
 }
 
+// Render the line and print it to stdout using the provided style.
+// Depending on the width of the terminal, multiple lines may be printed.
 func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, ageLimit int, style pretty.Style) {
 	maxDigits := len(fmt.Sprint(maxLineNumber))
 	lnSize := maxDigits + 9
@@ -133,25 +137,24 @@ func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, age
 
 	lenTag := len(l.tag) + 3
 	if maxTextWidth < lenTag {
-		log.Panic("terminal is too narrow")
+		log.Fatal("terminal is too narrow")
 	}
 
-	// TODO try to join with : and format after chunking
 	line := pretty.Bold(pretty.Emojify(l.tag)) + " " + l.text
 	wrapLine := wordWrap(line, maxTextWidth)
 	for i, chunk := range strings.Split(wrapLine, "\n") {
 		if i == 0 {
-			// Print line number + tag + text + author info
+			// Print lineNumber + tag + text + author info
 			cl := utf8.RuneCountInString(removeANSIEscapeCodes(chunk))
 			chunk := pretty.Colorize(chunk, l.tag, style)
-			lineNumber := pretty.PadLineNumber(l.n, maxDigits)
+			lineNumber := pretty.PrettyLineNumber(l.n, maxDigits)
 			pad := strings.Repeat(" ", maxTextWidth-cl)
 			chunk = chunk + pad
 			var blameStr string
 			if gb != nil {
 				blame, err := gb.BlameLine(l.n)
 				if err == nil {
-					blameStr = " " + pretty.PrettifyBlame(blame, ageLimit, style)
+					blameStr = " " + pretty.PrettyBlame(blame, ageLimit, style)
 				}
 			}
 			fmt.Println(lineNumber + chunk + blameStr)
@@ -164,6 +167,7 @@ func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, age
 	}
 }
 
+// Render the line and print it to stdout using the plain style format.
 func (l *matchLine) PlainRender(path string) {
 	fmt.Printf("%s:%d:%s:%s\n", path, l.n, l.tag, l.text)
 }
@@ -193,9 +197,10 @@ func (r *searchResult) printSummary(style pretty.Style) {
 	if len(counter) < 2 {
 		return
 	}
-	fmt.Println(pretty.PrettifySummary(counter, style))
+	fmt.Println(pretty.PrettySummary(counter, style))
 }
 
+// Render and print the filename and all matching lines to stdout.
 func (r *searchResult) Render(width int, params *searchParams) {
 	path := r.path
 	if !params.fullPath {
@@ -207,7 +212,7 @@ func (r *searchResult) Render(width int, params *searchParams) {
 			line.PlainRender(path)
 		}
 	default:
-		fmt.Println(pretty.StylizeFilename(path, len(r.lines), params.style))
+		fmt.Println(pretty.PrettyFilename(path, len(r.lines), params.style))
 		if params.summary {
 			r.printSummary(params.style)
 		}
@@ -227,6 +232,8 @@ func shortenFilepath(path string, rootPath string) string {
 	return shortPath
 }
 
+// Search a file or folder for the specified tags.
+// Use the function NewSearchParams to create the required struct.
 func Search(params *searchParams) {
 	searchJobs := make(chan *searchJob)
 	searchResults := make(chan *searchResult)

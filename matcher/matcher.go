@@ -13,10 +13,10 @@ import (
 
 var log = logging.MustGetLogger("listme")
 
-// GitDirName this is a special folder where all the git stuff is.
+// GitDirName is a special folder where all the git stuff is.
 const GitDirName = ".git"
 
-// Matcher provides a method to check if a filepath should be scanned or ignored.
+// Matcher provides a method that returns true if path should be scanned.
 type Matcher interface {
 	Match(path string) bool
 }
@@ -27,6 +27,11 @@ type matcher struct {
 	glob string
 }
 
+// NewMatcher returns a Matcher. If a git repository is found on the provided path or on a
+// parent directory, all .gitignore files are respected. The provided glob provides an additional
+// filter.
+//
+// If a glob pattern is not needed, pass "*.*".
 func NewMatcher(path string, glob string) Matcher {
 	path = filepath.Clean(path)
 	repoRoot, err := detectDotGit(path)
@@ -137,6 +142,7 @@ func (m *matcher) matchGitignore(path string) bool {
 	}
 }
 
+// MatchGit returns true if the path is a .git folder or is inside a .git folder.
 func MatchGit(path string) bool {
 	return strings.Contains(path, "/"+GitDirName+"/")
 }
