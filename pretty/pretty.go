@@ -3,7 +3,6 @@ package pretty
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +19,8 @@ const (
 	BWStyle
 	PlainStyle
 )
+const boldCode = "\x1b[1m"
+const resetBold = "\x1b[22m"
 
 // Styles
 var baseStyle = lipgloss.NewStyle()
@@ -36,7 +37,7 @@ var noteStyle = baseStyle.Copy().Foreground(lipgloss.Color("#87af87"))
 var hackStyle = baseStyle.Copy().Foreground(lipgloss.Color("#d7d700"))
 
 func Bold(str string) string {
-	return boldStyle.Render(str)
+	return boldCode + str + resetBold
 }
 
 func PadLineNumber(number int, maxDigits int) string {
@@ -45,9 +46,7 @@ func PadLineNumber(number int, maxDigits int) string {
 	return fmt.Sprintf("  [Line %s%d] ", pad, number)
 }
 
-
-func StylizeFilename(rootPath string, file string, nComments int, style Style) string {
-	file = shortenFilepath(file, rootPath)
+func StylizeFilename(file string, nComments int, style Style) string {
 	styler := baseStyle
 	if style == BWStyle {
 		styler = boldStyle
@@ -149,13 +148,22 @@ func GetStyle(bw bool, plain bool) (Style, error) {
 		return -1, fmt.Errorf("only one style can be specified")
 	}
 
-	fi, _ := os.Stdout.Stat()
-	if (fi.Mode() & os.ModeCharDevice) == 0 {
-		return PlainStyle, nil
-	} else if bw {
-		return BWStyle, nil
-	} else if plain {
-		return PlainStyle, nil
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		err = fmt.Errorf("error while read stdout info: %s", err)
+		return PlainStyle, err
 	}
-	return FullStyle, nil
+
+	var style Style
+	switch {
+	case (fi.Mode() & os.ModeCharDevice) == 0:
+		style = PlainStyle
+	case bw:
+		style = BWStyle
+	case plain:
+		style = PlainStyle
+	default:
+		style = FullStyle
+	}
+	return style, nil
 }
