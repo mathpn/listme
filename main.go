@@ -38,7 +38,7 @@ func main() {
 	noSummary := parser.Flag("S", "no-summary", &argparse.Options{Help: "Do not print summary box for each file"})
 	bw := parser.Flag("b", "bw", &argparse.Options{Help: "Use black and white style"})
 	plain := parser.Flag("p", "plain", &argparse.Options{Help: "Use plain style. Ideal for machine consumption. Used by default when redirecting the output"})
-	workers := parser.Int("w", "workers", &argparse.Options{Default: 128, Help: "Number of search workers. There's likely no need to change this"})
+	workers := parser.Int("w", "workers", &argparse.Options{Default: 128, Help: "[debug] Number of search workers. There's likely no need to change this"})
 	warning := parser.Flag("v", "verbose", &argparse.Options{Help: "Add warning verbosity"})
 	debug := parser.Flag("d", "debug", &argparse.Options{Help: "Add debug verbosity"})
 

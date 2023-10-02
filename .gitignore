@@ -19,6 +19,3 @@
 
 # Go workspace file
 go.work
-
-# XXX remove
-_src
