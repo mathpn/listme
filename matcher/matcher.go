@@ -144,11 +144,10 @@ func (m *matcher) matchGitignore(path string) bool {
 
 // MatchGit returns true if the path is a .git folder or is inside a .git folder.
 func MatchGit(path string) bool {
-	return strings.Contains(path, "/"+GitDirName+"/")
+	return strings.Contains(path, fmt.Sprint(os.PathSeparator, GitDirName, os.PathSeparator))
 }
 
 func detectDotGit(startDir string) (string, error) {
-	startDir = filepath.ToSlash(startDir) // XXX windows
 	startDir, err := replaceTildeWithHomeDir(startDir)
 	if err != nil {
 		return "", err

@@ -13,8 +13,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	tsize "github.com/kopoli/go-terminal-size"
 	logging "github.com/op/go-logging"
-	"golang.org/x/term"
 
 	"github.com/mathpn/listme/blame"
 	"github.com/mathpn/listme/matcher"
@@ -24,7 +24,9 @@ import (
 var log = logging.MustGetLogger("listme")
 var ansiRegex = regexp.MustCompile("\x1b(\\[[0-9;]*[A-Za-z])")
 
+// limiting the width improves readability of git author info
 const maxWidth = 120
+const defaultWidth = 75
 
 type searchParams struct {
 	rootPath string
@@ -52,8 +54,13 @@ func NewSearchParams(
 		return nil, fmt.Errorf("bad regex: %s", err)
 	}
 
+	absPath, err := filepath.Abs(filepath.ToSlash(path))
+	if err != nil {
+		log.Fatalf("error while building absolute path for %s: %s", path, err)
+	}
+
 	return &searchParams{
-		rootPath: filepath.ToSlash(path),
+		rootPath: absPath,
 		regex:    r,
 		matcher:  matcher,
 		workers:  workers,
@@ -84,7 +91,7 @@ type matchLine struct {
 	text string
 }
 
-// Wraps a long string on words with a max lineWidth measured in glyphemes.
+// Wraps a long string on words with a max lineWidth.
 // Adapted from https://codereview.stackexchange.com/questions/244435/word-wrap-in-go
 // to count emojis as 1 character and ignore ANSI escape sequences. It's much slower though.
 func wordWrap(text string, lineWidth int) string {
@@ -225,7 +232,7 @@ func (r *searchResult) Render(width int, params *searchParams) {
 }
 
 func shortenFilepath(path string, rootPath string) string {
-	shortPath := strings.Trim(strings.Replace(path, rootPath, "", 1), string(filepath.Separator))
+	shortPath := strings.Trim(strings.Replace(path, rootPath, "", 1), string(os.PathSeparator))
 	if shortPath == "" {
 		shortPath = filepath.Base(path)
 	}
@@ -322,7 +329,10 @@ func searchWorker(
 }
 
 func printResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, params *searchParams) {
-	width := getLimitedWidth()
+	var width int
+	if params.style != pretty.PlainStyle {
+		width = getLimitedWidth()
+	}
 	for result := range searchResults {
 		result.Render(width, params)
 		wgResult.Done()
@@ -330,14 +340,14 @@ func printResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, par
 }
 
 func getWidth() int {
-	ws, _, err := term.GetSize(0)
+	s, err := tsize.GetSize()
 
 	if err != nil {
-		log.Errorf("couldn't read terminal size, using width 70: %s", err)
-		return 70
+		log.Errorf("couldn't read terminal size, using width %d: %s", defaultWidth, err)
+		return defaultWidth
 	}
 
-	return ws
+	return s.Width
 }
 
 func getLimitedWidth() int {
