@@ -10,9 +10,11 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	logging "github.com/op/go-logging"
-	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 
 	"github.com/mathpn/listme/blame"
 	"github.com/mathpn/listme/matcher"
@@ -20,6 +22,9 @@ import (
 )
 
 var log = logging.MustGetLogger("listme")
+var ansiRegex = regexp.MustCompile("\x1b(\\[[0-9;]*[A-Za-z])")
+
+const maxWidth = 120
 
 type searchParams struct {
 	rootPath string
@@ -36,13 +41,13 @@ type searchParams struct {
 func NewSearchParams(
 	path string, tags []string, workers int, style pretty.Style, ageLimit int,
 	fullPath bool, noSummary bool, noAuthor bool, glob string,
-) *searchParams {
+) (*searchParams, error) {
 	matcher := matcher.NewMatcher(path, glob)
-	regex := getRegex(tags)
+	regex := getTagRegex(tags)
 
 	r, err := regexp.Compile(regex)
 	if err != nil {
-		log.Fatalf("Bad regex: %s", err)
+		return nil, fmt.Errorf("bad regex: %s", err)
 	}
 
 	return &searchParams{
@@ -55,10 +60,10 @@ func NewSearchParams(
 		fullPath: fullPath,
 		summary:  !noSummary,
 		author:   !noAuthor,
-	}
+	}, nil
 }
 
-func getRegex(tags []string) string {
+func getTagRegex(tags []string) string {
 	tagsRegex := fmt.Sprintf(
 		`(?m)(?:^|\s*(?:(?:#+|//+|<!--|--|/*|"""|''')+\s*)+)\s*(?:^|\b)(%s)[\s:;-]+(.+?)(?:$|-->|#}}|\*/|--}}|}}|#+|#}|"""|''')*$`,
 		strings.Join(tags, "|"),
@@ -77,24 +82,70 @@ type matchLine struct {
 	text string
 }
 
+// adapted from https://codereview.stackexchange.com/questions/244435/word-wrap-in-go
+// to count emojis as 1 character and ignore ANSI escape sequences. It's much slower though
+func wordWrap(text string, lineWidth int) string {
+	wrap := make([]byte, 0, len(text)+2*len(text)/lineWidth)
+	eoLine := lineWidth
+	running := 0
+	inWord := false
+	for i, j := 0, 0; ; {
+		r, size := utf8.DecodeRuneInString(text[i:])
+		if size == 0 && r == utf8.RuneError {
+			r = ' '
+		}
+		if unicode.IsSpace(r) {
+			if inWord {
+				wl := utf8.RuneCountInString(removeANSIEscapeCodes(text[j:i]))
+				if running+wl >= eoLine {
+					wrap = append(wrap, '\n')
+					// eoLine = len(wrap) + lineWidth
+					running = 0
+				} else if len(wrap) > 0 {
+					wrap = append(wrap, ' ')
+					running++
+				}
+				running += wl
+				wrap = append(wrap, text[j:i]...)
+			}
+			inWord = false
+		} else if !inWord {
+			inWord = true
+			j = i
+		}
+		if size == 0 && r == ' ' {
+			break
+		}
+		i += size
+	}
+	return string(wrap)
+}
+
+func removeANSIEscapeCodes(input string) string {
+	cleaned := ansiRegex.ReplaceAllString(input, "")
+	return cleaned
+}
+
 func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, ageLimit int, style pretty.Style) {
 	maxDigits := len(fmt.Sprint(maxLineNumber))
-	// NOTE git author space + 20% reserved for line number
-	maxTextWidth := width - maxDigits - int(0.2*float64(width)) - (blame.MaxAuthorLength + 6)
+	lnSize := maxDigits + 9
+	maxTextWidth := width - lnSize - (blame.MaxAuthorLength + 7)
 
-	prettyTag := pretty.Emojify(l.tag) + " "
 	lenTag := len(l.tag) + 3
-	maxLen := len(l.text) + lenTag
-	for i := 0; i < maxLen; i += maxTextWidth {
-		end := i + maxTextWidth
-		if end > maxLen {
-			end = maxLen
-		}
+	if maxTextWidth < lenTag {
+		log.Panic("terminal is too narrow")
+	}
+
+	// TODO try to join with : and format after chunking
+	line := pretty.Bold(pretty.Emojify(l.tag)) + " " + l.text
+	wrapLine := wordWrap(line, maxTextWidth)
+	for i, chunk := range strings.Split(wrapLine, "\n") {
 		if i == 0 {
 			// Print line number + tag + text + author info
-			chunk := pretty.Colorize(pretty.Bold(prettyTag), l.tag, style) + pretty.Colorize(l.text[i:end-lenTag], l.tag, style)
+			cl := utf8.RuneCountInString(removeANSIEscapeCodes(chunk))
+			chunk := pretty.Colorize(chunk, l.tag, style)
 			lineNumber := pretty.PadLineNumber(l.n, maxDigits)
-			pad := strings.Repeat(" ", maxTextWidth-(end-i))
+			pad := strings.Repeat(" ", maxTextWidth-cl)
 			chunk = chunk + pad
 			var blameStr string
 			if gb != nil {
@@ -106,7 +157,7 @@ func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, age
 			fmt.Println(lineNumber + chunk + blameStr)
 		} else {
 			// Print only the rest of the text
-			chunk := pretty.Colorize(l.text[i-lenTag:end-lenTag], l.tag, style)
+			chunk = pretty.Colorize(chunk, l.tag, style)
 			lineNumber := strings.Repeat(" ", len(fmt.Sprint(maxLineNumber))+10)
 			fmt.Println(lineNumber + chunk)
 		}
@@ -166,6 +217,14 @@ func (r *searchResult) Render(width int, params *searchParams) {
 		}
 		fmt.Println()
 	}
+}
+
+func shortenFilepath(path string, rootPath string) string {
+	shortPath := strings.Trim(strings.Replace(path, rootPath, "", 1), string(filepath.Separator))
+	if shortPath == "" {
+		shortPath = filepath.Base(path)
+	}
+	return shortPath
 }
 
 func Search(params *searchParams) {
@@ -246,7 +305,7 @@ func searchWorker(
 		if len(lines) > 0 {
 			wgResult.Add(1)
 			var gb *blame.GitBlame
-			if params.author {
+			if params.author && params.style != pretty.PlainStyle {
 				gb, _ = blame.BlameFile(job.path)
 			}
 			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}
@@ -263,30 +322,21 @@ func printResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, par
 	}
 }
 
-func getWinsize() (*unix.Winsize, error) {
-
-	ws, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
-	if err != nil {
-		return nil, os.NewSyscallError("GetWinsize", err)
-	}
-
-	return ws, nil
-}
-
 func getWidth() int {
-	ws, err := getWinsize()
+	ws, _, err := term.GetSize(0)
 
 	if err != nil {
-		return 50
+		log.Errorf("couldn't read terminal size, using width 70: %s", err)
+		return 70
 	}
 
-	return int(ws.Col)
+	return ws
 }
 
 func getLimitedWidth() int {
 	width := getWidth()
-	if width > 150 {
-		width = 150
+	if width > maxWidth {
+		width = maxWidth
 	}
 	return width
 }

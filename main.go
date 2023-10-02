@@ -21,7 +21,7 @@ func validateTags(tags []string) error {
 	for _, tag := range tags {
 		match := tagValRegex.MatchString(tag)
 		if !match {
-			return fmt.Errorf("provided tags must be non-empty and contain only alphanumeric or underscore characters")
+			return fmt.Errorf("provided tags must be non-empty and contain only alphanumeric characters")
 		}
 	}
 	return nil
@@ -30,8 +30,7 @@ func validateTags(tags []string) error {
 func main() {
 	parser := argparse.NewParser("listme", "Summarize you FIXME, TODO, XXX (and other tags) comments so you don't forget them.")
 	path := parser.StringPositional(&argparse.Options{Help: "Path to folder or file to be searched. Search is recursive."})
-	workers := parser.Int("w", "workers", &argparse.Options{Default: 128, Help: "number of search workers"})
-	tags := parser.StringList("T", "tags", &argparse.Options{Default: tags, Validate: validateTags, Help: "tags to search for"})
+	tags := parser.StringList("T", "tags", &argparse.Options{Default: tags, Validate: validateTags, Help: "Tags to search for, input should be separated by spaces"})
 	glob := parser.String("g", "glob", &argparse.Options{Default: "*.*", Help: "Glob pattern to filter files in the search. Use a single-quoted string. Example: '*.go'"})
 	ageLimit := parser.Int("l", "age-limit", &argparse.Options{Default: 60, Help: "Age limit for commits in days. Commits older than this limit are marked"})
 	fullPath := parser.Flag("F", "full-path", &argparse.Options{Help: "Print full absolute path of the files"})
@@ -39,6 +38,7 @@ func main() {
 	noSummary := parser.Flag("S", "no-summary", &argparse.Options{Help: "Do not print summary box for each file"})
 	bw := parser.Flag("b", "bw", &argparse.Options{Help: "Use black and white style"})
 	plain := parser.Flag("p", "plain", &argparse.Options{Help: "Use plain style. Ideal for machine consumption. Used by default when redirecting the output"})
+	workers := parser.Int("w", "workers", &argparse.Options{Default: 128, Help: "Number of search workers. There's likely no need to change this"})
 	warning := parser.Flag("v", "verbose", &argparse.Options{Help: "Add warning verbosity"})
 	debug := parser.Flag("d", "debug", &argparse.Options{Help: "Add debug verbosity"})
 
@@ -61,11 +61,14 @@ func main() {
 
 	style, err := pretty.GetStyle(*bw, *plain)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
-	params := search.NewSearchParams(
+	params, err := search.NewSearchParams(
 		*path, *tags, *workers, style, *ageLimit, *fullPath, *noSummary, *noAuthor, *glob,
 	)
+	if err != nil {
+		log.Fatal(err)
+	}
 	search.Search(params)
 }

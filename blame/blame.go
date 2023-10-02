@@ -16,7 +16,7 @@ import (
 
 var log = logging.MustGetLogger("listme")
 
-const MaxAuthorLength = 24
+const MaxAuthorLength = 20
 
 type LineBlame struct {
 	Author    string
