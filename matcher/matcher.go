@@ -155,11 +155,13 @@ func detectDotGit(startDir string) (string, error) {
 	}
 
 	for {
+		log.Debugf("searching for git repo in %s", startDir)
 		if isSystemRoot(startDir) {
 			return "", fmt.Errorf("reached the system root directory")
 		}
 
 		if hasGitDirectory(startDir) {
+			log.Debugf("found git repo root in %s", startDir)
 			return startDir, nil
 		}
 
@@ -182,7 +184,6 @@ func isSystemRoot(dir string) bool {
 func hasGitDirectory(dir string) bool {
 	gitDir := filepath.Join(dir, gitDirName)
 	_, err := os.Stat(gitDir)
-	log.Debugf("checking %s -> %v\n", gitDir, err == nil) // XXX remove
 	return err == nil
 }
 
