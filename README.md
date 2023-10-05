@@ -22,10 +22,10 @@ Originally written in Python, `listme` was later rewritten in [Go](https://go.de
 
 Ensure you have a recent version of [git](https://git-scm.com/) available in your PATH.
 
-### Option 1: `go install`
+### Option 1 (recommended): `go install`
 
 ```bash
-go install github.com/mathpn/listme
+go install github.com/mathpn/listme@latest
 ```
 
 ### Option 2: pre-compiled binaries
