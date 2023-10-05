@@ -46,17 +46,17 @@ func NewSearchParams(
 	path string, tags []string, workers int, style pretty.Style, ageLimit int,
 	fullPath bool, noSummary bool, noAuthor bool, glob string,
 ) (*searchParams, error) {
-	matcher := matcher.NewMatcher(path, glob)
+	absPath, err := filepath.Abs(filepath.ToSlash(path))
+	if err != nil {
+		log.Fatalf("error while building absolute path for %s: %s", path, err)
+	}
+
+	matcher := matcher.NewMatcher(absPath, glob)
 	regex := getTagRegex(tags)
 
 	r, err := regexp.Compile(regex)
 	if err != nil {
 		return nil, fmt.Errorf("bad regex: %s", err)
-	}
-
-	absPath, err := filepath.Abs(filepath.ToSlash(path))
-	if err != nil {
-		log.Fatalf("error while building absolute path for %s: %s", path, err)
 	}
 
 	return &searchParams{
