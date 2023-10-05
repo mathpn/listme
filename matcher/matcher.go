@@ -13,8 +13,9 @@ import (
 
 var log = logging.MustGetLogger("listme")
 
-// GitDirName is a special folder where all the git stuff is.
-const GitDirName = ".git"
+// gitDirName is a special folder where all the git stuff is.
+const gitDirName = ".git"
+const separator = string(os.PathSeparator)
 
 // Matcher provides a method that returns true if path should be scanned.
 type Matcher interface {
@@ -74,7 +75,7 @@ func walkGitignore(path string) (map[string]*gitignore.GitIgnore, error) {
 		}
 
 		// Check if it's a directory and not a .git directory
-		if info.IsDir() && !strings.HasSuffix(path, GitDirName) {
+		if info.IsDir() && !strings.HasSuffix(path, gitDirName) {
 			// Check if a .gitignore file exists in the directory
 			gitignorePath := filepath.Join(path, ".gitignore")
 			if _, err := os.Stat(gitignorePath); err == nil {
@@ -144,7 +145,7 @@ func (m *matcher) matchGitignore(path string) bool {
 
 // MatchGit returns true if the path is a .git folder or is inside a .git folder.
 func MatchGit(path string) bool {
-	return strings.Contains(path, fmt.Sprint(os.PathSeparator, GitDirName, os.PathSeparator))
+	return strings.Contains(path, separator+gitDirName+separator)
 }
 
 func detectDotGit(startDir string) (string, error) {
@@ -154,11 +155,13 @@ func detectDotGit(startDir string) (string, error) {
 	}
 
 	for {
+		log.Debugf("searching for git repo in %s", startDir)
 		if isSystemRoot(startDir) {
 			return "", fmt.Errorf("reached the system root directory")
 		}
 
 		if hasGitDirectory(startDir) {
+			log.Debugf("found git repo root in %s", startDir)
 			return startDir, nil
 		}
 
@@ -179,7 +182,7 @@ func isSystemRoot(dir string) bool {
 
 // Check if a directory contains a .git directory
 func hasGitDirectory(dir string) bool {
-	gitDir := filepath.Join(dir, GitDirName)
+	gitDir := filepath.Join(dir, gitDirName)
 	_, err := os.Stat(gitDir)
 	return err == nil
 }
