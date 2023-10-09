@@ -89,6 +89,12 @@ func walkGitignore(repoRoot string, refPath string) (map[string]*gitignore.GitIg
 			return filepath.SkipDir
 		}
 
+		// If an entire folder is ignored by a .gitignore, stop walking
+		if gitignoreMatch(matchers, path, repoRoot) {
+			log.Debugf(".gitignore search: skipping %s due to .gitignore patterns", path)
+			return filepath.SkipDir
+		}
+
 		// Check if it's a directory and not a .git directory
 		if !strings.HasSuffix(path, gitDirName) {
 			// Check if a .gitignore file exists in the directory
@@ -102,7 +108,7 @@ func walkGitignore(repoRoot string, refPath string) (map[string]*gitignore.GitIg
 		return nil
 	}
 
-	err := filepath.WalkDir(repoRoot, walker) // OPTIMIZE 18 -> 15ms with Walk -> WalkDir
+	err := filepath.WalkDir(repoRoot, walker)
 	if err != nil {
 		err = fmt.Errorf("error walking directory: %s", err)
 		return matchers, err
@@ -111,7 +117,7 @@ func walkGitignore(repoRoot string, refPath string) (map[string]*gitignore.GitIg
 }
 
 func (m *matcher) Match(path string) bool {
-	if m.matchGitignore(path) {
+	if gitignoreMatch(m.gi, path, m.root) {
 		return false
 	}
 	base := filepath.Base(path)
@@ -125,14 +131,14 @@ func (m *matcher) Match(path string) bool {
 	return false
 }
 
-func (m *matcher) matchGitignore(path string) bool {
-	if len(m.gi) == 0 {
+func gitignoreMatch(matchers map[string]*gitignore.GitIgnore, path string, root string) bool {
+	if len(matchers) == 0 {
 		return false
 	}
 
 	dir := filepath.Dir(path)
 	for {
-		matcher, ok := m.gi[dir]
+		matcher, ok := matchers[dir]
 		if ok {
 			checkPath, err := filepath.Rel(dir, path)
 			if err == nil {
@@ -140,12 +146,12 @@ func (m *matcher) matchGitignore(path string) bool {
 					return true
 				}
 			} else {
-				log.Errorf("error while getting relative path from %s using %s as root: %s", path, m.root, err)
+				log.Errorf("error while getting relative path from %s using %s as root: %s", path, root, err)
 			}
 		}
 
 		// Stop if we have reached the root of the repository
-		if dir == m.root {
+		if dir == root {
 			return false
 		}
 
