@@ -2,10 +2,10 @@ package matcher
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/op/go-logging"
 	gitignore "github.com/sabhiram/go-gitignore"
@@ -13,9 +13,11 @@ import (
 
 var log = logging.MustGetLogger("listme")
 
-// gitDirName is a special folder where all the git stuff is.
-const gitDirName = ".git"
-const separator = string(os.PathSeparator)
+const (
+	// gitDirName is a special folder where all the git stuff is.
+	gitDirName = ".git"
+	separator  = string(os.PathSeparator)
+)
 
 // Matcher provides a method that returns true if path should be scanned.
 type Matcher interface {
@@ -40,7 +42,7 @@ func NewMatcher(path string, glob string) Matcher {
 		log.Debugf("no git repository found in %s: %s", path, err)
 		return &matcher{root: path, gi: make(map[string]*gitignore.GitIgnore, 0), glob: glob}
 	}
-	matchers, err := walkGitignore(repoRoot)
+	matchers, err := walkGitignore(repoRoot, path)
 	if err != nil {
 		log.Errorf("error while parsing .gitignore files: %s", err)
 	}
@@ -48,12 +50,10 @@ func NewMatcher(path string, glob string) Matcher {
 
 }
 
-func walkGitignore(path string) (map[string]*gitignore.GitIgnore, error) {
+func walkGitignore(repoRoot string, refPath string) (map[string]*gitignore.GitIgnore, error) {
 	matchers := make(map[string]*gitignore.GitIgnore)
 
-	var mu sync.Mutex
-	parseGitignore := func(path string, wg *sync.WaitGroup) {
-		defer wg.Done()
+	parseGitignore := func(path string) {
 		matcher, err := gitignore.CompileIgnoreFile(path)
 		if err != nil {
 			log.Errorf("failed to parse .gitignore %s: %v\n", path, err)
@@ -61,37 +61,52 @@ func walkGitignore(path string) (map[string]*gitignore.GitIgnore, error) {
 		}
 
 		dir := filepath.Dir(path)
-
-		mu.Lock()
 		matchers[dir] = matcher
-		mu.Unlock()
 	}
 
-	var wg sync.WaitGroup
-	walker := func(path string, info os.FileInfo, err error) error {
+	walker := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			log.Errorf("error accessing %s: %v\n", path, err)
 			return nil
 		}
 
+		isDir := d.IsDir()
+
+		if !isDir {
+			return nil
+		}
+
+		if MatchGit(path) {
+			log.Debugf(".gitignore search: skipping .git folder %s", path)
+			return filepath.SkipDir
+		}
+
+		// Check if the path is in the hierarchy of refPath
+		isSub, _ := isSubfolder(path, refPath)
+		isSubRev, _ := isSubfolder(refPath, path)
+		if !isSub && !isSubRev {
+			log.Debugf(".gitignore search: skipping %s since it's outside of %s hierachy", path, refPath)
+			return filepath.SkipDir
+		}
+
 		// Check if it's a directory and not a .git directory
-		if info.IsDir() && !strings.HasSuffix(path, gitDirName) {
+		if !strings.HasSuffix(path, gitDirName) {
 			// Check if a .gitignore file exists in the directory
 			gitignorePath := filepath.Join(path, ".gitignore")
 			if _, err := os.Stat(gitignorePath); err == nil {
-				wg.Add(1)
-				go parseGitignore(gitignorePath, &wg)
+				log.Debugf("parsing new .gitignore file: %s", gitignorePath)
+				parseGitignore(gitignorePath)
 			}
 		}
+
 		return nil
 	}
 
-	err := filepath.Walk(path, walker)
+	err := filepath.WalkDir(repoRoot, walker) // OPTIMIZE 18 -> 15ms with Walk -> WalkDir
 	if err != nil {
 		err = fmt.Errorf("error walking directory: %s", err)
 		return matchers, err
 	}
-	wg.Wait()
 	return matchers, nil
 }
 
@@ -173,6 +188,17 @@ func detectDotGit(startDir string) (string, error) {
 
 		startDir = parentDir
 	}
+}
+
+func isSubfolder(subfolder, parentFolder string) (bool, error) {
+	relPath, err := filepath.Rel(parentFolder, subfolder)
+	if err != nil {
+		log.Errorf("subfolder check failed: %s", err)
+		return false, err
+	}
+
+	// Check if the relative path starts with ".." which indicates subfolder
+	return !strings.HasPrefix(relPath, ".."), nil
 }
 
 // Check if a directory is the system root
