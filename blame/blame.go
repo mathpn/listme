@@ -131,7 +131,7 @@ func BlameFile(path string) (*GitBlame, error) {
 
 	blames := parseGitBlame(stdout)
 	if err := cmd.Wait(); err != nil {
-		err = fmt.Errorf("git blame failed: %v\n%s", err, stderr.String())
+		err = fmt.Errorf("git blame failed: %v - %s", err, stderr.String())
 		log.Debug(err)
 		return nil, err
 	}
