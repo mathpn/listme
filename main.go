@@ -31,7 +31,7 @@ func main() {
 	parser := argparse.NewParser("listme", "Summarize you FIXME, TODO, XXX (and other tags) comments so you don't forget them.")
 	path := parser.StringPositional(&argparse.Options{Help: "Path to folder or file to be searched. Search is recursive."})
 	tags := parser.StringList("T", "tags", &argparse.Options{Default: tags, Validate: validateTags, Help: "Tags to search for, input should be separated by spaces"})
-	glob := parser.String("g", "glob", &argparse.Options{Default: "*.*", Help: "Glob pattern to filter files in the search. Use a single-quoted string. Example: '*.go'"})
+	glob := parser.String("g", "glob", &argparse.Options{Default: "*", Help: "Glob pattern to filter files in the search. Use a single-quoted string. Example: '*.go'"})
 	ageLimit := parser.Int("l", "age-limit", &argparse.Options{Default: 60, Help: "Age limit for commits in days. Commits older than this limit are marked"})
 	fullPath := parser.Flag("F", "full-path", &argparse.Options{Help: "Print full absolute path of the files"})
 	noAuthor := parser.Flag("A", "no-author", &argparse.Options{Help: "Do not print git author information"})

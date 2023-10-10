@@ -34,7 +34,7 @@ type matcher struct {
 // parent directory, all .gitignore files are respected. The provided glob provides an additional
 // filter.
 //
-// If a glob pattern is not needed, pass "*.*".
+// If a glob pattern is not needed, pass '*'.
 func NewMatcher(path string, glob string) Matcher {
 	path = filepath.Clean(path)
 	repoRoot, err := detectDotGit(path)
