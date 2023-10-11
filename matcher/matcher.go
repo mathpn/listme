@@ -166,7 +166,7 @@ func gitignoreMatch(matchers map[string]*gitignore.GitIgnore, path string, root 
 
 // MatchGit returns true if the path is a .git folder or is inside a .git folder.
 func MatchGit(path string) bool {
-	return strings.Contains(path, separator+gitDirName+separator)
+	return strings.HasSuffix(path, separator+gitDirName) || strings.Contains(path, separator+gitDirName+separator)
 }
 
 func detectDotGit(startDir string) (string, error) {
