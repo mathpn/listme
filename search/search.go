@@ -27,6 +27,7 @@ var ansiRegex = regexp.MustCompile("\x1b(\\[[0-9;]*[A-Za-z])")
 // limiting the width improves readability of git author info
 const maxWidth = 120
 const defaultWidth = 75
+const noComment = "\x1b[3m[no comment]\x1b[23m" // italic
 
 type searchParams struct {
 	rootPath string
@@ -74,7 +75,7 @@ func NewSearchParams(
 
 func getTagRegex(tags []string) string {
 	tagsRegex := fmt.Sprintf(
-		`(?m)(?:^|\s*(?:(?:#+|//+|<!--|--|/*|"""|''')+\s*)+)\s*(?:^|\b)(%s)[\s:;-]+(.+?)(?:$|-->|#}}|\*/|--}}|}}|#+|#}|"""|''')*$`,
+		`(?m)(?:^|\s*(?:(?:#+|//+|<!--|--|/*|"""|''')+\s*)+)\s*(?:^|\b)(%s)(?:[\s:;-]|$)(.*?)(?:$|-->|#}}|\*/|--}}|}}|#+|#}|"""|''')*$`,
 		strings.Join(tags, "|"),
 	)
 	return tagsRegex
@@ -147,7 +148,12 @@ func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, age
 		log.Fatal("terminal is too narrow")
 	}
 
-	line := pretty.Bold(pretty.Emojify(l.tag)) + " " + l.text
+	text := strings.TrimSpace(l.text)
+	if text == "" {
+		text = noComment
+	}
+
+	line := pretty.Bold(pretty.Emojify(l.tag)) + " " + text
 	wrapLine := wordWrap(line, maxTextWidth)
 	for i, chunk := range strings.Split(wrapLine, "\n") {
 		if i == 0 {
