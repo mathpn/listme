@@ -36,6 +36,7 @@ type searchParams struct {
 	workers  int
 	style    pretty.Style
 	ageLimit int
+	maxFs    int64
 	fullPath bool
 	summary  bool
 	author   bool
@@ -45,7 +46,7 @@ type searchParams struct {
 // to inspect a file or folder.
 func NewSearchParams(
 	path string, tags []string, workers int, style pretty.Style, ageLimit int,
-	fullPath bool, noSummary bool, noAuthor bool, glob string,
+	fullPath bool, maxFileSize int64, noSummary bool, noAuthor bool, glob string,
 ) (*searchParams, error) {
 	absPath, err := filepath.Abs(filepath.ToSlash(path))
 	if err != nil {
@@ -67,6 +68,7 @@ func NewSearchParams(
 		workers:  workers,
 		style:    style,
 		ageLimit: ageLimit,
+		maxFs:    maxFileSize,
 		fullPath: fullPath,
 		summary:  !noSummary,
 		author:   !noAuthor,
@@ -261,6 +263,7 @@ func Search(params *searchParams) {
 
 	walk := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			log.Errorf("file walk error: %s", err)
 			return err
 		}
 
@@ -279,10 +282,21 @@ func Search(params *searchParams) {
 			return nil
 		}
 
-		if !isDir {
-			wg.Add(1)
-			searchJobs <- &searchJob{path, params.regex}
+		if isDir {
+			return nil
 		}
+
+		info, err := d.Info()
+		if err != nil {
+			log.Error(err)
+			return nil
+		}
+		if info.Size() > params.maxFs<<20 {
+			log.Errorf("skipping file larger than %dMB: %s", params.maxFs, path)
+			return nil
+		}
+		wg.Add(1)
+		searchJobs <- &searchJob{path, params.regex}
 		return nil
 	}
 
@@ -330,7 +344,6 @@ func searchWorker(
 			}
 			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}
 		}
-		wg.Done()
 
 		if err = scanner.Err(); err != nil {
 			switch err {
@@ -344,6 +357,8 @@ func searchWorker(
 				log.Errorf("error while searching for tags in file %s - %s", job.path, err)
 			}
 		}
+
+		wg.Done()
 	}
 
 }

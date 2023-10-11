@@ -33,6 +33,7 @@ func main() {
 	tags := parser.StringList("T", "tags", &argparse.Options{Default: tags, Validate: validateTags, Help: "Tags to search for, input should be separated by spaces"})
 	glob := parser.String("g", "glob", &argparse.Options{Default: "*", Help: "Glob pattern to filter files in the search. Use a single-quoted string. Example: '*.go'"})
 	ageLimit := parser.Int("l", "age-limit", &argparse.Options{Default: 60, Help: "Age limit for commits in days. Commits older than this limit are marked"})
+	maxFileSize := parser.Int("f", "max-file-size", &argparse.Options{Default: 5, Help: "Maximum file size to scan (in MB)"})
 	fullPath := parser.Flag("F", "full-path", &argparse.Options{Help: "Print full absolute path of the files"})
 	noAuthor := parser.Flag("A", "no-author", &argparse.Options{Help: "Do not print git author information"})
 	noSummary := parser.Flag("S", "no-summary", &argparse.Options{Help: "Do not print summary box for each file"})
@@ -45,6 +46,11 @@ func main() {
 	err := parser.Parse(os.Args)
 	if err != nil {
 		fmt.Print(parser.Usage(err))
+		panic(err)
+	}
+
+	if *maxFileSize <= 0 {
+		panic("max-file-size must be a positive integer")
 	}
 
 	logging.SetFormatter(format)
@@ -65,7 +71,8 @@ func main() {
 	}
 
 	params, err := search.NewSearchParams(
-		*path, *tags, *workers, style, *ageLimit, *fullPath, *noSummary, *noAuthor, *glob,
+		*path, *tags, *workers, style, *ageLimit, *fullPath,
+		int64(*maxFileSize), *noSummary, *noAuthor, *glob,
 	)
 	if err != nil {
 		log.Fatal(err)
