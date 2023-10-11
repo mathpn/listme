@@ -253,28 +253,36 @@ func Search(params *searchParams) {
 
 	go printResult(searchResults, &wgResult, params)
 
-	filepath.WalkDir(
-		params.rootPath,
-		func(path string, d fs.DirEntry, err error) error {
-			return walk(path, d, err, params.regex, searchJobs, &wg)
-		},
-	)
+	walk := func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if matcher.MatchGit(path) {
+			log.Debugf("skipping .git directory: %s", path)
+			return filepath.SkipDir
+		}
+
+		isDir := d.IsDir()
+		match := !params.matcher.Match(path)
+		if match {
+			log.Warningf("skipping %s due to .gitignore or glob pattern\n", path)
+			if isDir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if !isDir {
+			wg.Add(1)
+			searchJobs <- &searchJob{path, params.regex}
+		}
+		return nil
+	}
+
+	filepath.WalkDir(params.rootPath, walk)
 	wg.Wait()
 	wgResult.Wait()
-}
-
-func walk(path string, d fs.DirEntry, err error, regex *regexp.Regexp, searchJobs chan *searchJob, wg *sync.WaitGroup) error {
-	if err != nil {
-		return err
-	}
-	if !d.IsDir() {
-		wg.Add(1)
-		searchJobs <- &searchJob{
-			path,
-			regex,
-		}
-	}
-	return nil
 }
 
 func searchWorker(
@@ -282,20 +290,12 @@ func searchWorker(
 	wg *sync.WaitGroup, wgResult *sync.WaitGroup,
 ) {
 	for job := range jobs {
-		if matcher.MatchGit(job.path) {
-			log.Debugf("skipping %s since it's in a .git directory\n", job.path)
-			wg.Done()
-			continue
-		}
-		if !params.matcher.Match(job.path) {
-			log.Warningf("skipping %s due to .gitignore or glob pattern\n", job.path)
-			wg.Done()
-			continue
-		}
+		log.Debugf("searching in file %s", job.path)
 		f, err := os.Open(filepath.FromSlash(job.path))
 		if err != nil {
 			log.Fatalf("couldn't open path %s: %s\n", job.path, err)
 		}
+		defer f.Close()
 
 		scanner := bufio.NewScanner(f)
 
@@ -325,7 +325,21 @@ func searchWorker(
 			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}
 		}
 		wg.Done()
+
+		if err = scanner.Err(); err != nil {
+			switch err {
+			case bufio.ErrTooLong:
+				log.Errorf(
+					"file %s has lines exceeding the maximum size of %dKB, results may be incomplete",
+					job.path,
+					bufio.MaxScanTokenSize>>10,
+				)
+			default:
+				log.Errorf("error while searching for tags in file %s - %s", job.path, err)
+			}
+		}
 	}
+
 }
 
 func printResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, params *searchParams) {
