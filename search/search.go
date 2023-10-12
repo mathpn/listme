@@ -27,6 +27,7 @@ var ansiRegex = regexp.MustCompile("\x1b(\\[[0-9;]*[A-Za-z])")
 // limiting the width improves readability of git author info
 const maxWidth = 120
 const defaultWidth = 75
+const noComment = "\x1b[3m[no comment]\x1b[23m" // italic
 
 type searchParams struct {
 	rootPath string
@@ -35,6 +36,7 @@ type searchParams struct {
 	workers  int
 	style    pretty.Style
 	ageLimit int
+	maxFs    int64
 	fullPath bool
 	summary  bool
 	author   bool
@@ -44,7 +46,7 @@ type searchParams struct {
 // to inspect a file or folder.
 func NewSearchParams(
 	path string, tags []string, workers int, style pretty.Style, ageLimit int,
-	fullPath bool, noSummary bool, noAuthor bool, glob string,
+	fullPath bool, maxFileSize int64, noSummary bool, noAuthor bool, glob string,
 ) (*searchParams, error) {
 	absPath, err := filepath.Abs(filepath.ToSlash(path))
 	if err != nil {
@@ -66,6 +68,7 @@ func NewSearchParams(
 		workers:  workers,
 		style:    style,
 		ageLimit: ageLimit,
+		maxFs:    maxFileSize,
 		fullPath: fullPath,
 		summary:  !noSummary,
 		author:   !noAuthor,
@@ -74,7 +77,7 @@ func NewSearchParams(
 
 func getTagRegex(tags []string) string {
 	tagsRegex := fmt.Sprintf(
-		`(?m)(?:^|\s*(?:(?:#+|//+|<!--|--|/*|"""|''')+\s*)+)\s*(?:^|\b)(%s)[\s:;-]+(.+?)(?:$|-->|#}}|\*/|--}}|}}|#+|#}|"""|''')*$`,
+		`(?m)(?:^|\s*(?:(?:#+|//+|<!--|--|/*|"""|''')+\s*)+)\s*(?:^|\b)(%s)(?:[\s:;-]|$)(.*?)(?:$|-->|#}}|\*/|--}}|}}|#+|#}|"""|''')*$`,
 		strings.Join(tags, "|"),
 	)
 	return tagsRegex
@@ -147,7 +150,12 @@ func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, age
 		log.Fatal("terminal is too narrow")
 	}
 
-	line := pretty.Bold(pretty.Emojify(l.tag)) + " " + l.text
+	text := strings.TrimSpace(l.text)
+	if text == "" {
+		text = noComment
+	}
+
+	line := pretty.Bold(pretty.Emojify(l.tag)) + " " + text
 	wrapLine := wordWrap(line, maxTextWidth)
 	for i, chunk := range strings.Split(wrapLine, "\n") {
 		if i == 0 {
@@ -253,28 +261,48 @@ func Search(params *searchParams) {
 
 	go printResult(searchResults, &wgResult, params)
 
-	filepath.WalkDir(
-		params.rootPath,
-		func(path string, d fs.DirEntry, err error) error {
-			return walk(path, d, err, params.regex, searchJobs, &wg)
-		},
-	)
+	walk := func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			log.Errorf("file walk error: %s", err)
+			return err
+		}
+
+		if matcher.MatchGit(path) {
+			log.Infof("skipping .git directory: %s", path)
+			return filepath.SkipDir
+		}
+
+		isDir := d.IsDir()
+		match := !params.matcher.Match(path)
+		if match {
+			log.Infof("skipping %s due to .gitignore or glob pattern\n", path)
+			if isDir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if isDir {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			log.Errorf("error getting file info for %s: %s", path, err)
+			return nil
+		}
+		if info.Size() > params.maxFs<<20 {
+			log.Warningf("skipping file larger than %dMB: %s", params.maxFs, path)
+			return nil
+		}
+		wg.Add(1)
+		searchJobs <- &searchJob{path, params.regex}
+		return nil
+	}
+
+	filepath.WalkDir(params.rootPath, walk)
 	wg.Wait()
 	wgResult.Wait()
-}
-
-func walk(path string, d fs.DirEntry, err error, regex *regexp.Regexp, searchJobs chan *searchJob, wg *sync.WaitGroup) error {
-	if err != nil {
-		return err
-	}
-	if !d.IsDir() {
-		wg.Add(1)
-		searchJobs <- &searchJob{
-			path,
-			regex,
-		}
-	}
-	return nil
 }
 
 func searchWorker(
@@ -282,20 +310,12 @@ func searchWorker(
 	wg *sync.WaitGroup, wgResult *sync.WaitGroup,
 ) {
 	for job := range jobs {
-		if matcher.MatchGit(job.path) {
-			log.Debugf("skipping %s since it's in a .git directory\n", job.path)
-			wg.Done()
-			continue
-		}
-		if !params.matcher.Match(job.path) {
-			log.Warningf("skipping %s due to .gitignore or glob pattern\n", job.path)
-			wg.Done()
-			continue
-		}
+		log.Debugf("searching in file %s", job.path)
 		f, err := os.Open(filepath.FromSlash(job.path))
 		if err != nil {
 			log.Fatalf("couldn't open path %s: %s\n", job.path, err)
 		}
+		defer f.Close()
 
 		scanner := bufio.NewScanner(f)
 
@@ -305,7 +325,7 @@ func searchWorker(
 			text := scanner.Bytes()
 
 			if mimeType := http.DetectContentType(text); !strings.HasPrefix(strings.Split(mimeType, ";")[0], "text") {
-				log.Warningf("skipping non-text file of type %s: %s\n", mimeType, job.path)
+				log.Infof("skipping non-text file of type %s: %s\n", mimeType, job.path)
 				break
 			}
 
@@ -324,8 +344,23 @@ func searchWorker(
 			}
 			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}
 		}
+
+		if err = scanner.Err(); err != nil {
+			switch err {
+			case bufio.ErrTooLong:
+				log.Errorf(
+					"file %s has lines exceeding the maximum size of %dKB, results may be incomplete",
+					job.path,
+					bufio.MaxScanTokenSize>>10,
+				)
+			default:
+				log.Errorf("error while searching for tags in file %s - %s", job.path, err)
+			}
+		}
+
 		wg.Done()
 	}
+
 }
 
 func printResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, params *searchParams) {
@@ -343,7 +378,7 @@ func getWidth() int {
 	s, err := tsize.GetSize()
 
 	if err != nil {
-		log.Errorf("couldn't read terminal size, using width %d: %s", defaultWidth, err)
+		log.Warningf("couldn't read terminal size, using width %d: %s", defaultWidth, err)
 		return defaultWidth
 	}
 

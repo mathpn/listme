@@ -37,7 +37,7 @@ func (b *GitBlame) BlameLine(line int) (*LineBlame, error) {
 	line = line - 1
 	if line < 0 || line >= len(b.blames) {
 		err := fmt.Errorf("line out of range")
-		log.Debug(err)
+		log.Info(err)
 		return nil, err
 	}
 	return b.blames[line], nil
@@ -131,7 +131,7 @@ func BlameFile(path string) (*GitBlame, error) {
 
 	blames := parseGitBlame(stdout)
 	if err := cmd.Wait(); err != nil {
-		err = fmt.Errorf("git blame failed: %v\n%s", err, stderr.String())
+		err = fmt.Errorf("git blame failed: %v - %s", err, stderr.String())
 		log.Debug(err)
 		return nil, err
 	}
