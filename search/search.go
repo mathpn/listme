@@ -268,14 +268,14 @@ func Search(params *searchParams) {
 		}
 
 		if matcher.MatchGit(path) {
-			log.Debugf("skipping .git directory: %s", path)
+			log.Infof("skipping .git directory: %s", path)
 			return filepath.SkipDir
 		}
 
 		isDir := d.IsDir()
 		match := !params.matcher.Match(path)
 		if match {
-			log.Warningf("skipping %s due to .gitignore or glob pattern\n", path)
+			log.Infof("skipping %s due to .gitignore or glob pattern\n", path)
 			if isDir {
 				return filepath.SkipDir
 			}
@@ -288,11 +288,11 @@ func Search(params *searchParams) {
 
 		info, err := d.Info()
 		if err != nil {
-			log.Error(err)
+			log.Errorf("error getting file info for %s: %s", path, err)
 			return nil
 		}
 		if info.Size() > params.maxFs<<20 {
-			log.Errorf("skipping file larger than %dMB: %s", params.maxFs, path)
+			log.Warningf("skipping file larger than %dMB: %s", params.maxFs, path)
 			return nil
 		}
 		wg.Add(1)
@@ -325,7 +325,7 @@ func searchWorker(
 			text := scanner.Bytes()
 
 			if mimeType := http.DetectContentType(text); !strings.HasPrefix(strings.Split(mimeType, ";")[0], "text") {
-				log.Warningf("skipping non-text file of type %s: %s\n", mimeType, job.path)
+				log.Infof("skipping non-text file of type %s: %s\n", mimeType, job.path)
 				break
 			}
 
@@ -378,7 +378,7 @@ func getWidth() int {
 	s, err := tsize.GetSize()
 
 	if err != nil {
-		log.Errorf("couldn't read terminal size, using width %d: %s", defaultWidth, err)
+		log.Warningf("couldn't read terminal size, using width %d: %s", defaultWidth, err)
 		return defaultWidth
 	}
 
