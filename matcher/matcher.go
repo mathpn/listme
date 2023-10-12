@@ -19,9 +19,20 @@ const (
 	separator  = string(os.PathSeparator)
 )
 
-// Matcher provides a method that returns true if path should be scanned.
+type MatchType int
+
+const (
+	GitIgnore MatchType = iota
+	GlobIgnore
+	Match
+)
+
+// Matcher provides a method that returns the match type.
+//   - Match: file should be scanned
+//   - GitIgnore: ignored due to .gitignore
+//   - GlobIgnore: ignored due to glob pattern
 type Matcher interface {
-	Match(path string) bool
+	Match(path string) MatchType
 }
 
 type matcher struct {
@@ -116,20 +127,20 @@ func walkGitignore(repoRoot string, refPath string) (map[string]*gitignore.GitIg
 	return matchers, nil
 }
 
-func (m *matcher) Match(path string) bool {
+func (m *matcher) Match(path string) MatchType {
 	if gitignoreMatch(m.gi, path, m.root) {
-		return false
+		return GitIgnore
 	}
 	base := filepath.Base(path)
 	matched, err := filepath.Match(m.glob, base)
 	if err != nil {
 		log.Infof("glob match error with path %s: %s", path, err)
-		return true
+		return Match
 	}
-	if matched {
-		return true
+	if !matched {
+		return GlobIgnore
 	}
-	return false
+	return Match
 }
 
 func gitignoreMatch(matchers map[string]*gitignore.GitIgnore, path string, root string) bool {
