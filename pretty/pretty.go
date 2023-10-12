@@ -93,8 +93,9 @@ func Emojify(tag string) string {
 		return "✐ NOTE"
 	case "HACK":
 		return "✄ HACK"
+	default:
+		return "⚠ " + tag
 	}
-	return "⚠ " + tag
 }
 
 // Colorize colorizes the provided text according to the tag and style.
@@ -118,8 +119,9 @@ func Colorize(text string, tag string, style Style) string {
 		return noteStyle.Render(text)
 	case "HACK":
 		return hackStyle.Render(text)
+	default:
+		return text
 	}
-	return text
 }
 
 // PrettyBlame returns a string with the format

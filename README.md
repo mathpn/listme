@@ -60,12 +60,13 @@ Most modern terminals support the Unicode symbols used in listme. For the best e
 - **path**: path to folder or file to be searched. Search is recursive.
 - **--tags (-T)**: Define the tags to search for, separated by spaces. Default tags include BUG, FIXME, XXX, TODO, HACK, OPTIMIZE, and NOTE.
 - **--glob (-g)**: Use a single-quoted glob pattern to filter files during the search (e.g., *.go).
-- **--age-limit (-l)**: Set the age limit for commits in days. Older commits are marked.
+- **--age-limit (-l)**: Set the age limit for commits in days. Older commits are marked. Default: 60 days
+- **--max-file-size (-f)**: Maximum file size to scan (in MB). Default: 5MB
 - **--full-path (-F)**: Print the full absolute path of files.
 - **--no-author (-A)**: Exclude Git author information.
 - **--no-summary (-S)**: Skip the summary box for each file.
 - **--workers (-w)**: Specify the number of search workers (usually not necessary to change).
-- **--verbose (-v)**: Enable warning verbosity.
+- **--verbose (-v)**: Enable info logging level.
 - **--debug (-d)**: Enable debug verbosity.
 
 ### Style options
