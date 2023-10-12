@@ -273,12 +273,15 @@ func Search(params *searchParams) {
 		}
 
 		isDir := d.IsDir()
-		match := !params.matcher.Match(path)
-		if match {
-			log.Infof("skipping %s due to .gitignore or glob pattern\n", path)
+		switch params.matcher.Match(path) {
+		case matcher.GitIgnore:
+			log.Infof("skipping %s due to .gitignore", path)
 			if isDir {
 				return filepath.SkipDir
 			}
+			return nil
+		case matcher.GlobIgnore:
+			log.Infof("skipping %s due to glob pattern", path)
 			return nil
 		}
 
@@ -313,7 +316,7 @@ func searchWorker(
 		log.Debugf("searching in file %s", job.path)
 		f, err := os.Open(filepath.FromSlash(job.path))
 		if err != nil {
-			log.Fatalf("couldn't open path %s: %s\n", job.path, err)
+			log.Fatalf("couldn't open path %s: %s", job.path, err)
 		}
 		defer f.Close()
 
@@ -325,7 +328,7 @@ func searchWorker(
 			text := scanner.Bytes()
 
 			if mimeType := http.DetectContentType(text); !strings.HasPrefix(strings.Split(mimeType, ";")[0], "text") {
-				log.Infof("skipping non-text file of type %s: %s\n", mimeType, job.path)
+				log.Infof("skipping non-text file of type %s: %s", mimeType, job.path)
 				break
 			}
 
