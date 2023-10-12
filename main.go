@@ -40,7 +40,7 @@ func main() {
 	bw := parser.Flag("b", "bw", &argparse.Options{Help: "Use black and white style"})
 	plain := parser.Flag("p", "plain", &argparse.Options{Help: "Use plain style. Ideal for machine consumption. Used by default when redirecting the output"})
 	workers := parser.Int("w", "workers", &argparse.Options{Default: 128, Help: "[debug] Number of search workers. There's likely no need to change this"})
-	warning := parser.Flag("v", "verbose", &argparse.Options{Help: "Add warning verbosity"})
+	verbose := parser.Flag("v", "verbose", &argparse.Options{Help: "Enable info logging level"})
 	debug := parser.Flag("d", "debug", &argparse.Options{Help: "Add debug verbosity"})
 
 	err := parser.Parse(os.Args)
@@ -54,12 +54,12 @@ func main() {
 	}
 
 	logging.SetFormatter(format)
-	b := logging.NewLogBackend(os.Stdout, "", 0)
+	b := logging.NewLogBackend(os.Stderr, "", 0)
 	bFormatter := logging.NewBackendFormatter(b, format)
 	logging.SetBackend(bFormatter)
-	logging.SetLevel(logging.ERROR, "")
-	if *warning {
-		logging.SetLevel(logging.WARNING, "")
+	logging.SetLevel(logging.WARNING, "")
+	if *verbose {
+		logging.SetLevel(logging.INFO, "")
 	}
 	if *debug {
 		logging.SetLevel(logging.DEBUG, "")

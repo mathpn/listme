@@ -37,7 +37,7 @@ func (b *GitBlame) BlameLine(line int) (*LineBlame, error) {
 	line = line - 1
 	if line < 0 || line >= len(b.blames) {
 		err := fmt.Errorf("line out of range")
-		log.Debug(err)
+		log.Info(err)
 		return nil, err
 	}
 	return b.blames[line], nil

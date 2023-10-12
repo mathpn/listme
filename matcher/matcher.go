@@ -56,7 +56,7 @@ func walkGitignore(repoRoot string, refPath string) (map[string]*gitignore.GitIg
 	parseGitignore := func(path string) {
 		matcher, err := gitignore.CompileIgnoreFile(path)
 		if err != nil {
-			log.Errorf("failed to parse .gitignore %s: %v\n", path, err)
+			log.Warningf("failed to parse .gitignore %s: %v\n", path, err)
 			return
 		}
 
@@ -66,7 +66,7 @@ func walkGitignore(repoRoot string, refPath string) (map[string]*gitignore.GitIg
 
 	walker := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			log.Errorf("error accessing %s: %v\n", path, err)
+			log.Errorf("file walk error: %s", err)
 			return nil
 		}
 
@@ -123,6 +123,7 @@ func (m *matcher) Match(path string) bool {
 	base := filepath.Base(path)
 	matched, err := filepath.Match(m.glob, base)
 	if err != nil {
+		log.Infof("glob match error with path %s: %s", path, err)
 		return true
 	}
 	if matched {
