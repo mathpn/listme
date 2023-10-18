@@ -17,12 +17,13 @@ This project was inspired by [`fixme`](https://github.com/JohnPostlethwait/fixme
 
 Originally written in Python, `listme` was later rewritten in [Go](https://go.dev/) to eliminate dependencies and boost performance.
 
-
 ## Installation
 
 Ensure you have a recent version of [git](https://git-scm.com/) available in your PATH.
 
-### Option 1 (recommended): `go install`
+### Option 1: install from source with `go install`
+
+Ensure you have Go installed and properly configured. There are instructions on how to set up Go [here](SETUP.md). Then, run:
 
 ```bash
 go install github.com/mathpn/listme@latest
@@ -32,10 +33,9 @@ go install github.com/mathpn/listme@latest
 
 Visit the _releases_ section to download pre-compiled binaries. Once downloaded, place the binary in a directory on your PATH.
 
-
 ## Getting Started
 
-Just call listme with the folder or file you want to inspect as the first argument.
+Just call `listme` with the folder or file you want to inspect as the first argument.
 
 ```bash
 listme .
@@ -49,19 +49,17 @@ You'll see an output like this:
 
 Comments from commits older than a certain age (set with `--age-limit`) are tagged as old, indicating their age along with the author's name, e.g., `[OLD John Doe]`.
 
-
 ### Font and terminal support
 
 Most modern terminals support the Unicode symbols used in listme. For the best experience, we recommend using a patched font (e.g., one from **[nerd fonts](https://www.nerdfonts.com/)**).
 
-
 ### Options
 
-- **path**: path to folder or file to be searched. Search is recursive.
+- **path**: Path to folder or file to be searched. Search is recursive.
 - **--tags (-T)**: Define the tags to search for, separated by spaces. Default tags include BUG, FIXME, XXX, TODO, HACK, OPTIMIZE, and NOTE.
 - **--glob (-g)**: Use a single-quoted glob pattern to filter files during the search (e.g., *.go).
 - **--age-limit (-l)**: Set the age limit for commits in days. Older commits are marked. Default: 60 days
-- **--max-file-size (-f)**: Maximum file size to scan (in MB). Default: 5MB
+- **--max-file-size (-f)**: Maximum file size to scan (in MB). Default: 5 MB
 - **--full-path (-F)**: Print the full absolute path of files.
 - **--no-author (-A)**: Exclude Git author information.
 - **--no-summary (-S)**: Skip the summary box for each file.
