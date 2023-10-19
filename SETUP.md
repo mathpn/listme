@@ -24,7 +24,7 @@ sudo pacman -S go
 sudo apt install golang
 ```
 
-You can check if the installation is successful with `go --version`.
+You can check if the installation is successful with `go version`.
 
 
 ## Update your PATH variable
