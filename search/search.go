@@ -30,16 +30,16 @@ const defaultWidth = 75
 const noComment = "\x1b[3m[no comment]\x1b[23m" // italic
 
 type searchParams struct {
-	rootPath string
-	regex    *regexp.Regexp
-	matcher  matcher.Matcher
-	workers  int
-	style    pretty.Style
-	ageLimit int
-	maxFs    int64
-	fullPath bool
-	summary  bool
-	author   bool
+	matcher    matcher.Matcher
+	regex      *regexp.Regexp
+	rootPath   string
+	workers    int
+	style      pretty.Style
+	ageLimit   int
+	maxFs      int64
+	fullPath   bool
+	summary    bool
+	showAuthor bool
 }
 
 // NewSearchParams creates a searchParams struct with all the information required
@@ -62,16 +62,16 @@ func NewSearchParams(
 	}
 
 	return &searchParams{
-		rootPath: absPath,
-		regex:    r,
-		matcher:  matcher,
-		workers:  workers,
-		style:    style,
-		ageLimit: ageLimit,
-		maxFs:    maxFileSize,
-		fullPath: fullPath,
-		summary:  !noSummary,
-		author:   !noAuthor,
+		rootPath:   absPath,
+		regex:      r,
+		matcher:    matcher,
+		workers:    workers,
+		style:      style,
+		ageLimit:   ageLimit,
+		maxFs:      maxFileSize,
+		fullPath:   fullPath,
+		summary:    !noSummary,
+		showAuthor: !noAuthor,
 	}, nil
 }
 
@@ -342,7 +342,7 @@ func searchWorker(
 		if len(lines) > 0 {
 			wgResult.Add(1)
 			var gb *blame.GitBlame
-			if params.author && params.style != pretty.PlainStyle {
+			if params.showAuthor && params.style != pretty.PlainStyle {
 				gb, _ = blame.BlameFile(job.path)
 			}
 			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}
