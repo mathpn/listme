@@ -84,14 +84,14 @@ func getTagRegex(tags []string) string {
 }
 
 type searchJob struct {
-	path  string
 	regex *regexp.Regexp
+	path  string
 }
 
 type matchLine struct {
-	n    int
 	tag  string
 	text string
+	n    int
 }
 
 // Wraps a long string on words with a max lineWidth.
@@ -161,7 +161,7 @@ func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, age
 		if i == 0 {
 			// Print lineNumber + tag + text + author info
 			cl := utf8.RuneCountInString(removeANSIEscapeCodes(chunk))
-			chunk := pretty.Colorize(chunk, l.tag, style)
+			chunk = pretty.Colorize(chunk, l.tag, style)
 			lineNumber := pretty.PrettyLineNumber(l.n, maxDigits)
 			pad := strings.Repeat(" ", maxTextWidth-cl)
 			chunk = chunk + pad
@@ -188,10 +188,10 @@ func (l *matchLine) PlainRender(path string) {
 }
 
 type searchResult struct {
+	blame    *blame.GitBlame
 	rootPath string
 	path     string
 	lines    []*matchLine
-	blame    *blame.GitBlame
 }
 
 func (r *searchResult) maxLineNumber() int {
@@ -299,7 +299,7 @@ func Search(params *searchParams) {
 			return nil
 		}
 		wg.Add(1)
-		searchJobs <- &searchJob{path, params.regex}
+		searchJobs <- &searchJob{regex: params.regex, path: path}
 		return nil
 	}
 

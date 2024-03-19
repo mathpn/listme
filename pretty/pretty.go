@@ -60,11 +60,14 @@ func PrettyLineNumber(number int, maxDigits int) string {
 //
 // The string if formatted according to the provided style (colorful or black-and-white).
 func PrettyFilename(path string, nComments int, style Style) string {
-	styler := baseStyle
-	if style == BWStyle {
+	var styler lipgloss.Style
+	switch style {
+	case BWStyle:
 		styler = boldStyle
-	} else if style == FullStyle {
+	case FullStyle:
 		styler = filenameColorStyle
+	default:
+		styler = baseStyle
 	}
 	fname := styler.Render(fmt.Sprintf("• %s", path))
 	var comments string
