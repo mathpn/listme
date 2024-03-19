@@ -40,6 +40,7 @@ type searchParams struct {
 	fullPath   bool
 	summary    bool
 	showAuthor bool
+	author     string
 }
 
 // NewSearchParams creates a searchParams struct with all the information required
@@ -47,6 +48,7 @@ type searchParams struct {
 func NewSearchParams(
 	path string, tags []string, workers int, style pretty.Style, ageLimit int,
 	fullPath bool, maxFileSize int64, noSummary bool, noAuthor bool, glob string,
+	author string,
 ) (*searchParams, error) {
 	absPath, err := filepath.Abs(filepath.ToSlash(path))
 	if err != nil {
@@ -72,6 +74,7 @@ func NewSearchParams(
 		fullPath:   fullPath,
 		summary:    !noSummary,
 		showAuthor: !noAuthor,
+		author:     author,
 	}, nil
 }
 
@@ -140,7 +143,7 @@ func removeANSIEscapeCodes(input string) string {
 
 // Render the line and print it to stdout using the provided style.
 // Depending on the width of the terminal, multiple lines may be printed.
-func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, ageLimit int, style pretty.Style) {
+func (l *matchLine) Render(width int, gb *blame.GitBlame, author string, maxLineNumber int, ageLimit int, style pretty.Style) {
 	maxDigits := len(fmt.Sprint(maxLineNumber))
 	lnSize := maxDigits + 9
 	maxTextWidth := width - lnSize - (blame.MaxAuthorLength + 7)
@@ -168,6 +171,9 @@ func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, age
 			var blameStr string
 			if gb != nil {
 				blame, err := gb.BlameLine(l.n)
+				if author != "" && blame.Author != author {
+					continue
+				}
 				if err == nil {
 					blameStr = " " + pretty.PrettyBlame(blame, ageLimit, style)
 				}
@@ -233,7 +239,7 @@ func (r *searchResult) Render(width int, params *searchParams) {
 		}
 		maxLineNumber := r.maxLineNumber()
 		for _, line := range r.lines {
-			line.Render(width, r.blame, maxLineNumber, params.ageLimit, params.style)
+			line.Render(width, r.blame, params.author, maxLineNumber, params.ageLimit, params.style)
 		}
 		fmt.Println()
 	}
@@ -342,7 +348,7 @@ func searchWorker(
 		if len(lines) > 0 {
 			wgResult.Add(1)
 			var gb *blame.GitBlame
-			if params.showAuthor && params.style != pretty.PlainStyle {
+			if params.author != "" || (params.showAuthor && params.style != pretty.PlainStyle) {
 				gb, _ = blame.BlameFile(job.path)
 			}
 			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}

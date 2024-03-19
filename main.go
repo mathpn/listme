@@ -42,6 +42,7 @@ func main() {
 	workers := parser.Int("w", "workers", &argparse.Options{Default: 128, Help: "[debug] Number of search workers. There's likely no need to change this"})
 	verbose := parser.Flag("v", "verbose", &argparse.Options{Help: "Enable info logging level"})
 	debug := parser.Flag("d", "debug", &argparse.Options{Help: "Add debug verbosity"})
+	author := parser.String("a", "author", &argparse.Options{Help: "Author filter"}) // XXX improve
 
 	err := parser.Parse(os.Args)
 	if err != nil {
@@ -73,6 +74,7 @@ func main() {
 	params, err := search.NewSearchParams(
 		*path, *tags, *workers, style, *ageLimit, *fullPath,
 		int64(*maxFileSize), *noSummary, *noAuthor, *glob,
+		*author,
 	)
 	if err != nil {
 		log.Fatal(err)
