@@ -330,6 +330,7 @@ func searchWorker(
 
 		line := 1
 		lines := make([]*matchLine, 0)
+		var gb *blame.GitBlame
 		for scanner.Scan() {
 			text := scanner.Bytes()
 
@@ -340,17 +341,40 @@ func searchWorker(
 
 			match := job.regex.FindSubmatch(scanner.Bytes())
 			if len(match) >= 3 {
+				if gb == nil && params.author != "" || (params.showAuthor && params.style != pretty.PlainStyle) {
+					gb, _ = blame.BlameFile(job.path)
+				}
+				if params.author != "" && gb == nil {
+					continue
+				}
+
+				if params.author != "" {
+					blame, err := gb.BlameLine(line)
+					if err != nil || blame.Author != params.author {
+						continue
+					}
+				}
 				line := matchLine{n: line, tag: string(match[1]), text: string(match[2])}
 				lines = append(lines, &line)
 			}
 			line++
 		}
+
 		if len(lines) > 0 {
 			wgResult.Add(1)
-			var gb *blame.GitBlame
-			if params.author != "" || (params.showAuthor && params.style != pretty.PlainStyle) {
-				gb, _ = blame.BlameFile(job.path)
+		}
+
+		if params.author != "" || (params.showAuthor && params.style != pretty.PlainStyle) {
+			gb, err = blame.BlameFile(job.path)
+			if err == nil {
+				for _, line := range lines {
+					blame, _ := gb.BlameLine(line.n)
+					fmt.Printf("%v\n", blame)
+					fmt.Printf("line: %d -- %v\n", line.n, blame)
+				}
 			}
+		}
+		if len(lines) > 0 {
 			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}
 		}
 
