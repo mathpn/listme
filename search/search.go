@@ -324,13 +324,14 @@ func searchWorker(
 		if err != nil {
 			log.Fatalf("couldn't open path %s: %s", job.path, err)
 		}
-		defer f.Close()
 
 		scanner := bufio.NewScanner(f)
 
-		line := 1
+		lineNumber := 1
 		lines := make([]*matchLine, 0)
 		var gb *blame.GitBlame
+		var lineBlame *blame.LineBlame
+		triedBlame := false
 		for scanner.Scan() {
 			text := scanner.Bytes()
 
@@ -340,41 +341,36 @@ func searchWorker(
 			}
 
 			match := job.regex.FindSubmatch(scanner.Bytes())
-			if len(match) >= 3 {
-				if gb == nil && params.author != "" || (params.showAuthor && params.style != pretty.PlainStyle) {
-					gb, _ = blame.BlameFile(job.path)
-				}
-				if params.author != "" && gb == nil {
+			if len(match) < 3 {
+				continue
+			}
+
+			if params.author != "" && !triedBlame {
+				gb, _ = blame.BlameFile(job.path)
+				triedBlame = true
+			}
+			if params.author != "" && gb == nil {
+				continue
+			}
+
+			if params.author != "" {
+				lineBlame, err = gb.BlameLine(lineNumber)
+				if err != nil || lineBlame.Author != params.author {
 					continue
 				}
-
-				if params.author != "" {
-					blame, err := gb.BlameLine(line)
-					if err != nil || blame.Author != params.author {
-						continue
-					}
-				}
-				line := matchLine{n: line, tag: string(match[1]), text: string(match[2])}
-				lines = append(lines, &line)
 			}
-			line++
+			line := matchLine{n: lineNumber, tag: string(match[1]), text: string(match[2])}
+			lines = append(lines, &line)
+			lineNumber++
 		}
 
 		if len(lines) > 0 {
 			wgResult.Add(1)
-		}
 
-		if params.author != "" || (params.showAuthor && params.style != pretty.PlainStyle) {
-			gb, err = blame.BlameFile(job.path)
-			if err == nil {
-				for _, line := range lines {
-					blame, _ := gb.BlameLine(line.n)
-					fmt.Printf("%v\n", blame)
-					fmt.Printf("line: %d -- %v\n", line.n, blame)
-				}
+			if gb == nil && params.showAuthor && params.style != pretty.PlainStyle {
+				gb, _ = blame.BlameFile(job.path)
 			}
-		}
-		if len(lines) > 0 {
+
 			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}
 		}
 
@@ -391,6 +387,7 @@ func searchWorker(
 			}
 		}
 
+		f.Close()
 		wg.Done()
 	}
 
