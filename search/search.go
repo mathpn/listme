@@ -92,9 +92,10 @@ type searchJob struct {
 }
 
 type matchLine struct {
-	tag  string
-	text string
-	n    int
+	blame *blame.LineBlame
+	tag   string
+	text  string
+	n     int
 }
 
 // Wraps a long string on words with a max lineWidth.
@@ -328,12 +329,16 @@ func searchWorker(
 		lines := make([]*matchLine, 0)
 		var gb *blame.GitBlame
 		var triedBlame bool
+		var lineBlame *blame.LineBlame
 
 		hasAuthorFilter := params.author != ""
+		requiresBlame := hasAuthorFilter || (params.showAuthor && params.style != pretty.PlainStyle)
+
 		for lineNumber := 1; scanner.Scan(); lineNumber++ {
 			text := scanner.Bytes()
 
-			if mimeType := http.DetectContentType(text); !strings.HasPrefix(strings.SplitN(mimeType, ";", 1)[0], "text") {
+			mimeType := http.DetectContentType(text)
+			if !strings.HasPrefix(strings.SplitN(mimeType, ";", 1)[0], "text") {
 				log.Infof("skipping non-text file of type %s: %s", mimeType, job.path)
 				break
 			}
@@ -343,38 +348,26 @@ func searchWorker(
 				continue
 			}
 
-			if hasAuthorFilter && !triedBlame {
+			if requiresBlame && !triedBlame {
 				gb, _ = blame.BlameFile(job.path)
 				triedBlame = true
 			}
-			if hasAuthorFilter && gb == nil {
+			if hasAuthorFilter && triedBlame && gb == nil {
 				log.Debugf("skipping %s due to author filter. Git blame failed.", job.path)
 				break
 			}
 
-			if hasAuthorFilter {
-				lineBlame, err := gb.BlameLine(lineNumber)
-				if err != nil {
-					log.Debugf(
-						"skipping %s line %d due to author filter. Error in git blame: %v",
-						job.path,
-						lineNumber,
-						err,
-					)
+			if requiresBlame {
+				lineBlame, err = gb.BlameLine(lineNumber)
+				if hasAuthorFilter && (err != nil || lineBlame.Author != params.author) {
+					log.Debugf("skipping %s line %d due to author filter", job.path, lineNumber)
 					continue
-				}
-				if lineBlame.Author != params.author {
-					log.Debugf(
-						"skipping %s line %d due to author filter. Detected author: %s",
-						job.path,
-						lineNumber,
-						lineBlame.Author,
-					)
-					continue
-
 				}
 			}
-			lines = append(lines, &matchLine{n: lineNumber, tag: string(match[1]), text: string(match[2])})
+			lines = append(
+				lines,
+				&matchLine{blame: lineBlame, n: lineNumber, tag: string(match[1]), text: string(match[2])},
+			)
 		}
 
 		if len(lines) > 0 {
