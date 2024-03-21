@@ -313,88 +313,101 @@ func Search(params *searchParams) {
 }
 
 func searchWorker(
-	params *searchParams, jobs chan *searchJob, searchResults chan *searchResult,
-	wg *sync.WaitGroup, wgResult *sync.WaitGroup,
+	params *searchParams,
+	jobs chan *searchJob,
+	searchResults chan *searchResult,
+	wg, wgResult *sync.WaitGroup,
 ) {
 	for job := range jobs {
-		log.Debugf("searching in file %s", job.path)
+		scanFile(params, job, searchResults, wgResult)
+		wg.Done()
+	}
+}
 
-		f, err := os.Open(filepath.FromSlash(job.path))
-		if err != nil {
-			log.Fatalf("couldn't open path %s: %s", job.path, err)
+func scanFile(
+	params *searchParams,
+	job *searchJob,
+	searchResults chan *searchResult,
+	wgResult *sync.WaitGroup,
+) {
+	log.Debugf("scanning file %s", job.path)
+
+	f, err := os.Open(filepath.FromSlash(job.path))
+	if err != nil {
+		log.Fatalf("couldn't open path %s: %s", job.path, err)
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+
+	lines := make([]*matchLine, 0)
+	var gb *blame.GitBlame
+	var triedBlame bool
+	var lineBlame *blame.LineBlame
+
+	hasAuthorFilter := params.author != ""
+	requiresBlame := hasAuthorFilter || (params.showAuthor && params.style != pretty.PlainStyle)
+
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		text := scanner.Bytes()
+
+		mimeType := http.DetectContentType(text)
+		if !strings.HasPrefix(strings.SplitN(mimeType, ";", 1)[0], "text") {
+			log.Infof("skipping non-text file of type %s: %s", mimeType, job.path)
+			break
 		}
 
-		scanner := bufio.NewScanner(f)
+		match := job.regex.FindSubmatch(text)
+		if len(match) < 3 {
+			continue
+		}
 
-		lines := make([]*matchLine, 0)
-		var gb *blame.GitBlame
-		var triedBlame bool
-		var lineBlame *blame.LineBlame
+		if requiresBlame && !triedBlame {
+			gb, _ = blame.BlameFile(job.path)
+			triedBlame = true
+		}
+		if hasAuthorFilter && triedBlame && gb == nil {
+			log.Debugf("skipping %s due to author filter. Git blame failed.", job.path)
+			break
+		}
 
-		hasAuthorFilter := params.author != ""
-		requiresBlame := hasAuthorFilter || (params.showAuthor && params.style != pretty.PlainStyle)
+		if requiresBlame {
+			lineBlame, err = gb.BlameLine(lineNumber)
 
-		for lineNumber := 1; scanner.Scan(); lineNumber++ {
-			text := scanner.Bytes()
-
-			mimeType := http.DetectContentType(text)
-			if !strings.HasPrefix(strings.SplitN(mimeType, ";", 1)[0], "text") {
-				log.Infof("skipping non-text file of type %s: %s", mimeType, job.path)
-				break
-			}
-
-			match := job.regex.FindSubmatch(text)
-			if len(match) < 3 {
+			if hasAuthorFilter && (err != nil || lineBlame.Author != params.author) {
+				log.Debugf("skipping %s line %d due to author filter", job.path, lineNumber)
 				continue
 			}
+		}
+		lines = append(
+			lines,
+			&matchLine{blame: lineBlame, n: lineNumber, tag: string(match[1]), text: string(match[2])},
+		)
+	}
 
-			if requiresBlame && !triedBlame {
-				gb, _ = blame.BlameFile(job.path)
-				triedBlame = true
-			}
-			if hasAuthorFilter && triedBlame && gb == nil {
-				log.Debugf("skipping %s due to author filter. Git blame failed.", job.path)
-				break
-			}
-
-			if requiresBlame {
-				lineBlame, err = gb.BlameLine(lineNumber)
-				if hasAuthorFilter && (err != nil || lineBlame.Author != params.author) {
-					log.Debugf("skipping %s line %d due to author filter", job.path, lineNumber)
-					continue
-				}
-			}
-			lines = append(
-				lines,
-				&matchLine{blame: lineBlame, n: lineNumber, tag: string(match[1]), text: string(match[2])},
+	if err = scanner.Err(); err != nil {
+		switch err {
+		case bufio.ErrTooLong:
+			log.Errorf(
+				"file %s has lines exceeding the maximum size of %dKB, results may be incomplete",
+				job.path,
+				bufio.MaxScanTokenSize>>10,
 			)
+		default:
+			log.Errorf("error while searching for tags in file %s - %s", job.path, err)
+		}
+		return
+	}
+
+	if len(lines) > 0 {
+		wgResult.Add(1)
+
+		if !triedBlame && requiresBlame {
+			gb, _ = blame.BlameFile(job.path)
 		}
 
-		if len(lines) > 0 {
-			wgResult.Add(1)
-
-			if !triedBlame && gb == nil && params.showAuthor && params.style != pretty.PlainStyle {
-				gb, _ = blame.BlameFile(job.path)
-			}
-
-			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}
-		}
-
-		if err = scanner.Err(); err != nil {
-			switch err {
-			case bufio.ErrTooLong:
-				log.Errorf(
-					"file %s has lines exceeding the maximum size of %dKB, results may be incomplete",
-					job.path,
-					bufio.MaxScanTokenSize>>10,
-				)
-			default:
-				log.Errorf("error while searching for tags in file %s - %s", job.path, err)
-			}
-		}
-
-		f.Close()
-		wg.Done()
+		searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}
 	}
 }
 
