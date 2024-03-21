@@ -144,7 +144,13 @@ func removeANSIEscapeCodes(input string) string {
 
 // Render the line and print it to stdout using the provided style.
 // Depending on the width of the terminal, multiple lines may be printed.
-func (l *matchLine) Render(width int, author string, maxLineNumber int, ageLimit int, style pretty.Style) {
+func (l *matchLine) Render(
+	width int,
+	maxLineNumber,
+	ageLimit int,
+	showAuthor bool,
+	style pretty.Style,
+) {
 	maxDigits := len(fmt.Sprint(maxLineNumber))
 	lnSize := maxDigits + 9
 	maxTextWidth := width - lnSize - (blame.MaxAuthorLength + 7)
@@ -170,7 +176,7 @@ func (l *matchLine) Render(width int, author string, maxLineNumber int, ageLimit
 			pad := strings.Repeat(" ", maxTextWidth-cl)
 			chunk = chunk + pad
 			var blameStr string
-			if l.blame != nil {
+			if showAuthor && l.blame != nil {
 				blameStr = " " + pretty.PrettyBlame(l.blame, ageLimit, style)
 			}
 			fmt.Println(lineNumber + chunk + blameStr)
@@ -233,7 +239,7 @@ func (r *searchResult) Render(width int, params *searchParams) {
 		}
 		maxLineNumber := r.maxLineNumber()
 		for _, line := range r.lines {
-			line.Render(width, params.author, maxLineNumber, params.ageLimit, params.style)
+			line.Render(width, maxLineNumber, params.ageLimit, params.showAuthor, params.style)
 		}
 		fmt.Println()
 	}
