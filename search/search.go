@@ -320,6 +320,7 @@ func searchWorker(
 ) {
 	for job := range jobs {
 		log.Debugf("searching in file %s", job.path)
+
 		f, err := os.Open(filepath.FromSlash(job.path))
 		if err != nil {
 			log.Fatalf("couldn't open path %s: %s", job.path, err)
@@ -327,21 +328,20 @@ func searchWorker(
 
 		scanner := bufio.NewScanner(f)
 
-		lineNumber := 1
 		lines := make([]*matchLine, 0)
 		var gb *blame.GitBlame
-		var lineBlame *blame.LineBlame
-		triedBlame := false
+		var triedBlame bool
+
 		hasAuthorFilter := params.author != ""
-		for scanner.Scan() {
+		for lineNumber := 1; scanner.Scan(); lineNumber++ {
 			text := scanner.Bytes()
 
-			if mimeType := http.DetectContentType(text); !strings.HasPrefix(strings.Split(mimeType, ";")[0], "text") {
+			if mimeType := http.DetectContentType(text); !strings.HasPrefix(strings.SplitN(mimeType, ";", 1)[0], "text") {
 				log.Infof("skipping non-text file of type %s: %s", mimeType, job.path)
 				break
 			}
 
-			match := job.regex.FindSubmatch(scanner.Bytes())
+			match := job.regex.FindSubmatch(text)
 			if len(match) < 3 {
 				continue
 			}
@@ -356,27 +356,34 @@ func searchWorker(
 			}
 
 			if hasAuthorFilter {
-				lineBlame, err = gb.BlameLine(lineNumber)
-				if err != nil || lineBlame.Author != params.author {
+				lineBlame, err := gb.BlameLine(lineNumber)
+				if err != nil {
 					log.Debugf(
-						"skipping %s line %d due to author filter (detected author: %s, err: %v)",
+						"skipping %s line %d due to author filter. Error in git blame: %v",
 						job.path,
 						lineNumber,
-						lineBlame.Author,
 						err,
 					)
 					continue
 				}
+				if lineBlame.Author != params.author {
+					log.Debugf(
+						"skipping %s line %d due to author filter. Detected author: %s",
+						job.path,
+						lineNumber,
+						lineBlame.Author,
+					)
+					continue
+
+				}
 			}
-			line := matchLine{n: lineNumber, tag: string(match[1]), text: string(match[2])}
-			lines = append(lines, &line)
-			lineNumber++
+			lines = append(lines, &matchLine{n: lineNumber, tag: string(match[1]), text: string(match[2])})
 		}
 
 		if len(lines) > 0 {
 			wgResult.Add(1)
 
-			if gb == nil && params.showAuthor && params.style != pretty.PlainStyle {
+			if !triedBlame && gb == nil && params.showAuthor && params.style != pretty.PlainStyle {
 				gb, _ = blame.BlameFile(job.path)
 			}
 
