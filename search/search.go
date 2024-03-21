@@ -319,7 +319,12 @@ func searchWorker(
 	wg, wgResult *sync.WaitGroup,
 ) {
 	for job := range jobs {
-		scanFile(params, job, searchResults, wgResult)
+		lines := scanFile(params, job)
+		if len(lines) > 0 {
+			wgResult.Add(1)
+			// FIXME remove blame from searchResult
+			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: nil}
+		}
 		wg.Done()
 	}
 }
@@ -327,21 +332,19 @@ func searchWorker(
 func scanFile(
 	params *searchParams,
 	job *searchJob,
-	searchResults chan *searchResult,
-	wgResult *sync.WaitGroup,
-) {
+) []*matchLine {
 	log.Debugf("scanning file %s", job.path)
 
+	var lines []*matchLine
 	f, err := os.Open(filepath.FromSlash(job.path))
 	if err != nil {
 		log.Fatalf("couldn't open path %s: %s", job.path, err)
-		return
+		return lines
 	}
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
 
-	lines := make([]*matchLine, 0)
 	var gb *blame.GitBlame
 	var triedBlame bool
 	var lineBlame *blame.LineBlame
@@ -372,7 +375,7 @@ func scanFile(
 			break
 		}
 
-		if requiresBlame {
+		if requiresBlame && gb != nil {
 			lineBlame, err = gb.BlameLine(lineNumber)
 
 			if hasAuthorFilter && (err != nil || lineBlame.Author != params.author) {
@@ -397,18 +400,9 @@ func scanFile(
 		default:
 			log.Errorf("error while searching for tags in file %s - %s", job.path, err)
 		}
-		return
 	}
 
-	if len(lines) > 0 {
-		wgResult.Add(1)
-
-		if !triedBlame && requiresBlame {
-			gb, _ = blame.BlameFile(job.path)
-		}
-
-		searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}
-	}
+	return lines
 }
 
 func printResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, params *searchParams) {
