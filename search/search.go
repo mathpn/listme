@@ -332,6 +332,7 @@ func searchWorker(
 		var gb *blame.GitBlame
 		var lineBlame *blame.LineBlame
 		triedBlame := false
+		hasAuthorFilter := params.author != ""
 		for scanner.Scan() {
 			text := scanner.Bytes()
 
@@ -345,17 +346,25 @@ func searchWorker(
 				continue
 			}
 
-			if params.author != "" && !triedBlame {
+			if hasAuthorFilter && !triedBlame {
 				gb, _ = blame.BlameFile(job.path)
 				triedBlame = true
 			}
-			if params.author != "" && gb == nil {
-				continue
+			if hasAuthorFilter && gb == nil {
+				log.Debugf("skipping %s due to author filter. Git blame failed.", job.path)
+				break
 			}
 
-			if params.author != "" {
+			if hasAuthorFilter {
 				lineBlame, err = gb.BlameLine(lineNumber)
 				if err != nil || lineBlame.Author != params.author {
+					log.Debugf(
+						"skipping %s line %d due to author filter (detected author: %s, err: %v)",
+						job.path,
+						lineNumber,
+						lineBlame.Author,
+						err,
+					)
 					continue
 				}
 			}
@@ -390,7 +399,6 @@ func searchWorker(
 		f.Close()
 		wg.Done()
 	}
-
 }
 
 func printResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, params *searchParams) {
