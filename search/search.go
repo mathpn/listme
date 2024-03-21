@@ -171,9 +171,6 @@ func (l *matchLine) Render(width int, gb *blame.GitBlame, author string, maxLine
 			var blameStr string
 			if gb != nil {
 				blame, err := gb.BlameLine(l.n)
-				if author != "" && blame.Author != author {
-					continue
-				}
 				if err == nil {
 					blameStr = " " + pretty.PrettyBlame(blame, ageLimit, style)
 				}
