@@ -33,6 +33,7 @@ type searchParams struct {
 	matcher    matcher.Matcher
 	regex      *regexp.Regexp
 	rootPath   string
+	author     string
 	workers    int
 	style      pretty.Style
 	ageLimit   int
@@ -40,7 +41,6 @@ type searchParams struct {
 	fullPath   bool
 	summary    bool
 	showAuthor bool
-	author     string
 }
 
 // NewSearchParams creates a searchParams struct with all the information required
@@ -144,7 +144,7 @@ func removeANSIEscapeCodes(input string) string {
 
 // Render the line and print it to stdout using the provided style.
 // Depending on the width of the terminal, multiple lines may be printed.
-func (l *matchLine) Render(width int, gb *blame.GitBlame, author string, maxLineNumber int, ageLimit int, style pretty.Style) {
+func (l *matchLine) Render(width int, author string, maxLineNumber int, ageLimit int, style pretty.Style) {
 	maxDigits := len(fmt.Sprint(maxLineNumber))
 	lnSize := maxDigits + 9
 	maxTextWidth := width - lnSize - (blame.MaxAuthorLength + 7)
@@ -170,11 +170,8 @@ func (l *matchLine) Render(width int, gb *blame.GitBlame, author string, maxLine
 			pad := strings.Repeat(" ", maxTextWidth-cl)
 			chunk = chunk + pad
 			var blameStr string
-			if gb != nil {
-				blame, err := gb.BlameLine(l.n)
-				if err == nil {
-					blameStr = " " + pretty.PrettyBlame(blame, ageLimit, style)
-				}
+			if l.blame != nil {
+				blameStr = " " + pretty.PrettyBlame(l.blame, ageLimit, style)
 			}
 			fmt.Println(lineNumber + chunk + blameStr)
 		} else {
@@ -192,7 +189,6 @@ func (l *matchLine) PlainRender(path string) {
 }
 
 type searchResult struct {
-	blame    *blame.GitBlame
 	rootPath string
 	path     string
 	lines    []*matchLine
@@ -237,7 +233,7 @@ func (r *searchResult) Render(width int, params *searchParams) {
 		}
 		maxLineNumber := r.maxLineNumber()
 		for _, line := range r.lines {
-			line.Render(width, r.blame, params.author, maxLineNumber, params.ageLimit, params.style)
+			line.Render(width, params.author, maxLineNumber, params.ageLimit, params.style)
 		}
 		fmt.Println()
 	}
@@ -322,8 +318,7 @@ func searchWorker(
 		lines := scanFile(params, job)
 		if len(lines) > 0 {
 			wgResult.Add(1)
-			// FIXME remove blame from searchResult
-			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: nil}
+			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines}
 		}
 		wg.Done()
 	}
