@@ -36,7 +36,7 @@ type GitBlame struct {
 func (b *GitBlame) BlameLine(line int) (*LineBlame, error) {
 	line = line - 1
 	if line < 0 || line >= len(b.blames) {
-		err := fmt.Errorf("line out of range")
+		err := fmt.Errorf("line %d out of range", line)
 		log.Info(err)
 		return nil, err
 	}
