@@ -30,29 +30,35 @@ const defaultWidth = 75
 const noComment = "\x1b[3m[no comment]\x1b[23m" // italic
 
 type searchParams struct {
-	matcher    matcher.Matcher
-	regex      *regexp.Regexp
-	rootPath   string
-	author     string
-	workers    int
-	style      pretty.Style
-	ageLimit   int
-	maxFs      int64
-	fullPath   bool
-	summary    bool
-	showAuthor bool
+	matcher         matcher.Matcher
+	regex           *regexp.Regexp
+	rootPath        string
+	author          string
+	style           pretty.Style
+	workers         int
+	oldCommitLimit  int
+	commitAgeFilter int
+	maxFs           int64
+	fullPath        bool
+	summary         bool
+	showAuthor      bool
 }
 
 // NewSearchParams creates a searchParams struct with all the information required
-// to inspect a file or folder.
+// to inspect a file or directory.
 func NewSearchParams(
-	path string, tags []string, workers int, style pretty.Style, ageLimit int,
-	fullPath bool, maxFileSize int64, noSummary bool, noAuthor bool, glob string,
-	author string,
+	path string,
+	tags []string,
+	workers int,
+	style pretty.Style,
+	oldCommitLimit, commitAgeFilter int,
+	maxFileSize int64,
+	fullPath, noSummary, noAuthor bool,
+	glob, author string,
 ) (*searchParams, error) {
 	absPath, err := filepath.Abs(filepath.ToSlash(path))
 	if err != nil {
-		log.Fatalf("error while building absolute path for %s: %s", path, err)
+		return nil, fmt.Errorf("failed to get absolute path for %s: %s", path, err)
 	}
 
 	matcher := matcher.NewMatcher(absPath, glob)
@@ -60,21 +66,22 @@ func NewSearchParams(
 
 	r, err := regexp.Compile(regex)
 	if err != nil {
-		return nil, fmt.Errorf("bad regex: %s", err)
+		return nil, fmt.Errorf("failed to compile regex: %s", err)
 	}
 
 	return &searchParams{
-		rootPath:   absPath,
-		regex:      r,
-		matcher:    matcher,
-		workers:    workers,
-		style:      style,
-		ageLimit:   ageLimit,
-		maxFs:      maxFileSize,
-		fullPath:   fullPath,
-		summary:    !noSummary,
-		showAuthor: !noAuthor,
-		author:     author,
+		rootPath:        absPath,
+		regex:           r,
+		matcher:         matcher,
+		workers:         workers,
+		style:           style,
+		oldCommitLimit:  oldCommitLimit,
+		maxFs:           maxFileSize,
+		fullPath:        fullPath,
+		summary:         !noSummary,
+		showAuthor:      !noAuthor,
+		author:          author,
+		commitAgeFilter: commitAgeFilter,
 	}, nil
 }
 
@@ -239,7 +246,7 @@ func (r *searchResult) Render(width int, params *searchParams) {
 		}
 		maxLineNumber := r.maxLineNumber()
 		for _, line := range r.lines {
-			line.Render(width, maxLineNumber, params.ageLimit, params.showAuthor, params.style)
+			line.Render(width, maxLineNumber, params.oldCommitLimit, params.showAuthor, params.style)
 		}
 		fmt.Println()
 	}
