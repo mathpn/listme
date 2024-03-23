@@ -141,6 +141,7 @@ func PrettyBlame(blame *blame.LineBlame, ageLimit int, style Style) string {
 	if blame.Timestamp == 0 {
 		return blameStr
 	}
+	// TODO remove timestamp logic from this module
 	date := time.Unix(blame.Timestamp, 0)
 	currentDate := time.Now()
 
