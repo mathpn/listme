@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -357,8 +358,7 @@ func scanFile(
 	var triedBlame bool
 	var lineBlame *blame.LineBlame
 
-	hasAuthorFilter := params.author != ""
-	requiresBlame := hasAuthorFilter || (params.showAuthor && params.style != pretty.PlainStyle)
+	requiresBlame := params.author != "" || (params.showAuthor && params.style != pretty.PlainStyle)
 
 	for lineNumber := 1; scanner.Scan(); lineNumber++ {
 		text := scanner.Bytes()
@@ -378,23 +378,15 @@ func scanFile(
 			gb, _ = blame.BlameFile(job.path)
 			triedBlame = true
 		}
-		if hasAuthorFilter && triedBlame && gb == nil {
-			log.Debugf("skipping %s due to author filter. Git blame failed.", job.path)
-			break
-		}
 
 		if requiresBlame && gb != nil {
-			lineBlame, err = gb.BlameLine(lineNumber)
-
-			if hasAuthorFilter && (err != nil || lineBlame.Author != params.author) {
-				log.Debugf("skipping %s line %d due to author filter", job.path, lineNumber)
-				continue
-			}
+			lineBlame, _ = gb.BlameLine(lineNumber)
 		}
-		lines = append(
-			lines,
-			&matchLine{blame: lineBlame, n: lineNumber, tag: string(match[1]), text: string(match[2])},
-		)
+
+		line := &matchLine{blame: lineBlame, n: lineNumber, tag: string(match[1]), text: string(match[2])}
+		if validLine(job.path, line, params) {
+			lines = append(lines, line)
+		}
 	}
 
 	if err = scanner.Err(); err != nil {
@@ -409,8 +401,28 @@ func scanFile(
 			log.Errorf("error while searching for tags in file %s - %s", job.path, err)
 		}
 	}
-
 	return lines
+}
+
+func validLine(path string, line *matchLine, params *searchParams) bool {
+	if params.author != "" && (line.blame == nil || line.blame.Author != params.author) {
+		log.Debugf("skipping %s line %d due to author filter", path, line.n)
+		return false
+	}
+	if params.commitAgeFilter != -1 {
+		if line.blame == nil {
+			return false
+		}
+		date := time.Unix(line.blame.Timestamp, 0)
+		currentDate := time.Now()
+
+		diff := currentDate.Sub(date)
+		maxAge := time.Duration(params.commitAgeFilter) * 24 * time.Hour
+		if diff > maxAge {
+			return false
+		}
+	}
+	return true
 }
 
 func printResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, params *searchParams) {
