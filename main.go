@@ -43,7 +43,7 @@ func main() {
 	verbose := parser.Flag("v", "verbose", &argparse.Options{Help: "Enable info logging level"})
 	debug := parser.Flag("d", "debug", &argparse.Options{Help: "Add debug verbosity"})
 	author := parser.String("a", "author", &argparse.Options{Help: "Filter lines by commit author"})
-	ageFilter := parser.Int("n", "newer-than", &argparse.Options{Help: "Filters lines based on the age of commits, showing only lines committed within the specified number of days"})
+	ageFilter := parser.Int("n", "newer-than", &argparse.Options{Default: -1, Help: "Filters lines based on the age of commits, showing only lines committed within the specified number of days"})
 
 	err := parser.Parse(os.Args)
 	if err != nil {
