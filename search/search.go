@@ -31,18 +31,18 @@ const defaultWidth = 75
 const noComment = "\x1b[3m[no comment]\x1b[23m" // italic
 
 type searchParams struct {
-	matcher         matcher.Matcher
-	regex           *regexp.Regexp
-	rootPath        string
-	author          string
-	style           pretty.Style
-	workers         int
-	oldCommitLimit  int
-	commitAgeFilter int
-	maxFs           int64
-	fullPath        bool
-	summary         bool
-	showAuthor      bool
+	matcher       matcher.Matcher
+	regex         *regexp.Regexp
+	rootPath      string
+	author        string
+	style         pretty.Style
+	workers       int
+	oldCommitTime time.Time
+	commitAgeTime time.Time
+	maxFs         int64
+	fullPath      bool
+	summary       bool
+	showAuthor    bool
 }
 
 // NewSearchParams creates a searchParams struct with all the information required
@@ -70,19 +70,30 @@ func NewSearchParams(
 		return nil, fmt.Errorf("failed to compile regex: %s", err)
 	}
 
+	currentTime := time.Now()
+	maxAge := time.Duration(oldCommitLimit) * 24 * time.Hour
+	oldCommitTime := currentTime.Add(-maxAge)
+
+	commitAgeTime := time.Unix(0, 0)
+	if commitAgeFilter != -1 {
+		maxAge = time.Duration(commitAgeFilter) * 24 * time.Hour
+		commitAgeTime = currentTime.Add(-maxAge)
+		fmt.Printf("time: %v\n", commitAgeTime)
+	}
+
 	return &searchParams{
-		rootPath:        absPath,
-		regex:           r,
-		matcher:         matcher,
-		workers:         workers,
-		style:           style,
-		oldCommitLimit:  oldCommitLimit,
-		maxFs:           maxFileSize,
-		fullPath:        fullPath,
-		summary:         !noSummary,
-		showAuthor:      !noAuthor,
-		author:          author,
-		commitAgeFilter: commitAgeFilter,
+		rootPath:      absPath,
+		regex:         r,
+		matcher:       matcher,
+		workers:       workers,
+		style:         style,
+		oldCommitTime: oldCommitTime,
+		maxFs:         maxFileSize,
+		fullPath:      fullPath,
+		summary:       !noSummary,
+		showAuthor:    !noAuthor,
+		author:        author,
+		commitAgeTime: commitAgeTime,
 	}, nil
 }
 
@@ -154,8 +165,8 @@ func removeANSIEscapeCodes(input string) string {
 // Depending on the width of the terminal, multiple lines may be printed.
 func (l *matchLine) Render(
 	width int,
-	maxLineNumber,
-	ageLimit int,
+	maxLineNumber int,
+	oldCommitTime time.Time,
 	showAuthor bool,
 	style pretty.Style,
 ) {
@@ -185,7 +196,7 @@ func (l *matchLine) Render(
 			chunk = chunk + pad
 			var blameStr string
 			if showAuthor && l.blame != nil {
-				blameStr = " " + pretty.PrettyBlame(l.blame, ageLimit, style)
+				blameStr = " " + pretty.PrettyBlame(l.blame, oldCommitTime, style)
 			}
 			fmt.Println(lineNumber + chunk + blameStr)
 		} else {
@@ -247,7 +258,7 @@ func (r *searchResult) Render(width int, params *searchParams) {
 		}
 		maxLineNumber := r.maxLineNumber()
 		for _, line := range r.lines {
-			line.Render(width, maxLineNumber, params.oldCommitLimit, params.showAuthor, params.style)
+			line.Render(width, maxLineNumber, params.oldCommitTime, params.showAuthor, params.style)
 		}
 		fmt.Println()
 	}
@@ -409,15 +420,13 @@ func validLine(path string, line *matchLine, params *searchParams) bool {
 		log.Debugf("skipping %s line %d due to author filter", path, line.n)
 		return false
 	}
-	if params.commitAgeFilter != -1 {
+	if !params.commitAgeTime.IsZero() {
 		if line.blame == nil {
 			return false
 		}
-		currentDate := time.Now()
 
-		diff := currentDate.Sub(line.blame.Time)
-		maxAge := time.Duration(params.commitAgeFilter) * 24 * time.Hour
-		if diff > maxAge {
+		// TODO add debug log
+		if line.blame.Time.Before(params.commitAgeTime) {
 			return false
 		}
 	}
