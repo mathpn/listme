@@ -24,6 +24,7 @@ import (
 
 var log = logging.MustGetLogger("listme")
 var ansiRegex = regexp.MustCompile("\x1b(\\[[0-9;]*[A-Za-z])")
+var zeroTime = time.Unix(0, 0)
 
 // limiting the width improves readability of git author info
 const maxWidth = 120
@@ -74,11 +75,10 @@ func NewSearchParams(
 	maxAge := time.Duration(oldCommitLimit) * 24 * time.Hour
 	oldCommitTime := currentTime.Add(-maxAge)
 
-	commitAgeTime := time.Unix(0, 0)
+	commitAgeTime := zeroTime
 	if commitAgeFilter != -1 {
 		maxAge = time.Duration(commitAgeFilter) * 24 * time.Hour
 		commitAgeTime = currentTime.Add(-maxAge)
-		fmt.Printf("time: %v\n", commitAgeTime)
 	}
 
 	return &searchParams{
@@ -420,7 +420,7 @@ func validLine(path string, line *matchLine, params *searchParams) bool {
 		log.Debugf("skipping %s line %d due to author filter", path, line.n)
 		return false
 	}
-	if !params.commitAgeTime.IsZero() {
+	if !params.commitAgeTime.Equal(zeroTime) {
 		if line.blame == nil {
 			return false
 		}
