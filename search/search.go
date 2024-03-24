@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -23,6 +24,7 @@ import (
 
 var log = logging.MustGetLogger("listme")
 var ansiRegex = regexp.MustCompile("\x1b(\\[[0-9;]*[A-Za-z])")
+var zeroTime = time.Unix(0, 0)
 
 // limiting the width improves readability of git author info
 const maxWidth = 120
@@ -30,27 +32,35 @@ const defaultWidth = 75
 const noComment = "\x1b[3m[no comment]\x1b[23m" // italic
 
 type searchParams struct {
-	rootPath string
-	regex    *regexp.Regexp
-	matcher  matcher.Matcher
-	workers  int
-	style    pretty.Style
-	ageLimit int
-	maxFs    int64
-	fullPath bool
-	summary  bool
-	author   bool
+	oldCommitTime time.Time
+	commitAgeTime time.Time
+	matcher       matcher.Matcher
+	regex         *regexp.Regexp
+	rootPath      string
+	author        string
+	style         pretty.Style
+	workers       int
+	maxFs         int64
+	fullPath      bool
+	summary       bool
+	showAuthor    bool
 }
 
 // NewSearchParams creates a searchParams struct with all the information required
-// to inspect a file or folder.
+// to inspect a file or directory.
 func NewSearchParams(
-	path string, tags []string, workers int, style pretty.Style, ageLimit int,
-	fullPath bool, maxFileSize int64, noSummary bool, noAuthor bool, glob string,
+	path string,
+	tags []string,
+	workers int,
+	style pretty.Style,
+	oldCommitLimit, commitAgeFilter int,
+	maxFileSize int64,
+	fullPath, noSummary, noAuthor bool,
+	glob, author string,
 ) (*searchParams, error) {
 	absPath, err := filepath.Abs(filepath.ToSlash(path))
 	if err != nil {
-		log.Fatalf("error while building absolute path for %s: %s", path, err)
+		return nil, fmt.Errorf("failed to get absolute path for %s: %s", path, err)
 	}
 
 	matcher := matcher.NewMatcher(absPath, glob)
@@ -58,20 +68,32 @@ func NewSearchParams(
 
 	r, err := regexp.Compile(regex)
 	if err != nil {
-		return nil, fmt.Errorf("bad regex: %s", err)
+		return nil, fmt.Errorf("failed to compile regex: %s", err)
+	}
+
+	currentTime := time.Now()
+	maxAge := time.Duration(oldCommitLimit) * 24 * time.Hour
+	oldCommitTime := currentTime.Add(-maxAge)
+
+	commitAgeTime := zeroTime
+	if commitAgeFilter != -1 {
+		maxAge = time.Duration(commitAgeFilter) * 24 * time.Hour
+		commitAgeTime = currentTime.Add(-maxAge)
 	}
 
 	return &searchParams{
-		rootPath: absPath,
-		regex:    r,
-		matcher:  matcher,
-		workers:  workers,
-		style:    style,
-		ageLimit: ageLimit,
-		maxFs:    maxFileSize,
-		fullPath: fullPath,
-		summary:  !noSummary,
-		author:   !noAuthor,
+		rootPath:      absPath,
+		regex:         r,
+		matcher:       matcher,
+		workers:       workers,
+		style:         style,
+		oldCommitTime: oldCommitTime,
+		maxFs:         maxFileSize,
+		fullPath:      fullPath,
+		summary:       !noSummary,
+		showAuthor:    !noAuthor,
+		author:        author,
+		commitAgeTime: commitAgeTime,
 	}, nil
 }
 
@@ -84,14 +106,15 @@ func getTagRegex(tags []string) string {
 }
 
 type searchJob struct {
-	path  string
 	regex *regexp.Regexp
+	path  string
 }
 
 type matchLine struct {
-	n    int
-	tag  string
-	text string
+	blame *blame.LineBlame
+	tag   string
+	text  string
+	n     int
 }
 
 // Wraps a long string on words with a max lineWidth.
@@ -140,7 +163,13 @@ func removeANSIEscapeCodes(input string) string {
 
 // Render the line and print it to stdout using the provided style.
 // Depending on the width of the terminal, multiple lines may be printed.
-func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, ageLimit int, style pretty.Style) {
+func (l *matchLine) Render(
+	width int,
+	maxLineNumber int,
+	oldCommitTime time.Time,
+	showAuthor bool,
+	style pretty.Style,
+) {
 	maxDigits := len(fmt.Sprint(maxLineNumber))
 	lnSize := maxDigits + 9
 	maxTextWidth := width - lnSize - (blame.MaxAuthorLength + 7)
@@ -161,16 +190,13 @@ func (l *matchLine) Render(width int, gb *blame.GitBlame, maxLineNumber int, age
 		if i == 0 {
 			// Print lineNumber + tag + text + author info
 			cl := utf8.RuneCountInString(removeANSIEscapeCodes(chunk))
-			chunk := pretty.Colorize(chunk, l.tag, style)
+			chunk = pretty.Colorize(chunk, l.tag, style)
 			lineNumber := pretty.PrettyLineNumber(l.n, maxDigits)
 			pad := strings.Repeat(" ", maxTextWidth-cl)
 			chunk = chunk + pad
 			var blameStr string
-			if gb != nil {
-				blame, err := gb.BlameLine(l.n)
-				if err == nil {
-					blameStr = " " + pretty.PrettyBlame(blame, ageLimit, style)
-				}
+			if showAuthor && l.blame != nil {
+				blameStr = " " + pretty.PrettyBlame(l.blame, oldCommitTime, style)
 			}
 			fmt.Println(lineNumber + chunk + blameStr)
 		} else {
@@ -191,7 +217,6 @@ type searchResult struct {
 	rootPath string
 	path     string
 	lines    []*matchLine
-	blame    *blame.GitBlame
 }
 
 func (r *searchResult) maxLineNumber() int {
@@ -233,7 +258,7 @@ func (r *searchResult) Render(width int, params *searchParams) {
 		}
 		maxLineNumber := r.maxLineNumber()
 		for _, line := range r.lines {
-			line.Render(width, r.blame, maxLineNumber, params.ageLimit, params.style)
+			line.Render(width, maxLineNumber, params.oldCommitTime, params.showAuthor, params.style)
 		}
 		fmt.Println()
 	}
@@ -299,7 +324,7 @@ func Search(params *searchParams) {
 			return nil
 		}
 		wg.Add(1)
-		searchJobs <- &searchJob{path, params.regex}
+		searchJobs <- &searchJob{regex: params.regex, path: path}
 		return nil
 	}
 
@@ -309,61 +334,104 @@ func Search(params *searchParams) {
 }
 
 func searchWorker(
-	params *searchParams, jobs chan *searchJob, searchResults chan *searchResult,
-	wg *sync.WaitGroup, wgResult *sync.WaitGroup,
+	params *searchParams,
+	jobs chan *searchJob,
+	searchResults chan *searchResult,
+	wg, wgResult *sync.WaitGroup,
 ) {
 	for job := range jobs {
-		log.Debugf("searching in file %s", job.path)
-		f, err := os.Open(filepath.FromSlash(job.path))
-		if err != nil {
-			log.Fatalf("couldn't open path %s: %s", job.path, err)
-		}
-		defer f.Close()
-
-		scanner := bufio.NewScanner(f)
-
-		line := 1
-		lines := make([]*matchLine, 0)
-		for scanner.Scan() {
-			text := scanner.Bytes()
-
-			if mimeType := http.DetectContentType(text); !strings.HasPrefix(strings.Split(mimeType, ";")[0], "text") {
-				log.Infof("skipping non-text file of type %s: %s", mimeType, job.path)
-				break
-			}
-
-			match := job.regex.FindSubmatch(scanner.Bytes())
-			if len(match) >= 3 {
-				line := matchLine{n: line, tag: string(match[1]), text: string(match[2])}
-				lines = append(lines, &line)
-			}
-			line++
-		}
+		lines := scanFile(params, job)
 		if len(lines) > 0 {
 			wgResult.Add(1)
-			var gb *blame.GitBlame
-			if params.author && params.style != pretty.PlainStyle {
-				gb, _ = blame.BlameFile(job.path)
-			}
-			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines, blame: gb}
+			searchResults <- &searchResult{rootPath: params.rootPath, path: job.path, lines: lines}
 		}
-
-		if err = scanner.Err(); err != nil {
-			switch err {
-			case bufio.ErrTooLong:
-				log.Errorf(
-					"file %s has lines exceeding the maximum size of %dKB, results may be incomplete",
-					job.path,
-					bufio.MaxScanTokenSize>>10,
-				)
-			default:
-				log.Errorf("error while searching for tags in file %s - %s", job.path, err)
-			}
-		}
-
 		wg.Done()
 	}
+}
 
+func scanFile(
+	params *searchParams,
+	job *searchJob,
+) []*matchLine {
+	log.Debugf("scanning file %s", job.path)
+
+	var lines []*matchLine
+	f, err := os.Open(filepath.FromSlash(job.path))
+	if err != nil {
+		log.Fatalf("couldn't open path %s: %s", job.path, err)
+		return lines
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+
+	var gb *blame.GitBlame
+	var triedBlame bool
+	var lineBlame *blame.LineBlame
+
+	requiresBlame := params.author != "" || (params.showAuthor && params.style != pretty.PlainStyle)
+
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
+		text := scanner.Bytes()
+
+		mimeType := http.DetectContentType(text)
+		if !strings.HasPrefix(strings.SplitN(mimeType, ";", 1)[0], "text") {
+			log.Infof("skipping non-text file of type %s: %s", mimeType, job.path)
+			break
+		}
+
+		match := job.regex.FindSubmatch(text)
+		if len(match) < 3 {
+			continue
+		}
+
+		if requiresBlame && !triedBlame {
+			gb, _ = blame.BlameFile(job.path)
+			triedBlame = true
+		}
+
+		if requiresBlame && gb != nil {
+			lineBlame, _ = gb.BlameLine(lineNumber)
+		}
+
+		line := &matchLine{blame: lineBlame, n: lineNumber, tag: string(match[1]), text: string(match[2])}
+		if validLine(job.path, line, params) {
+			lines = append(lines, line)
+		}
+	}
+
+	if err = scanner.Err(); err != nil {
+		switch err {
+		case bufio.ErrTooLong:
+			log.Errorf(
+				"file %s has lines exceeding the maximum size of %dKB, results may be incomplete",
+				job.path,
+				bufio.MaxScanTokenSize>>10,
+			)
+		default:
+			log.Errorf("error while searching for tags in file %s - %s", job.path, err)
+		}
+	}
+	return lines
+}
+
+func validLine(path string, line *matchLine, params *searchParams) bool {
+	if params.author != "" && (line.blame == nil || line.blame.Author != params.author) {
+		log.Debugf("skipping %s line %d due to author filter", path, line.n)
+		return false
+	}
+	if !params.commitAgeTime.Equal(zeroTime) {
+		if line.blame == nil {
+			log.Debugf("skipping %s line %d due to commit age: no git blame", path, line)
+			return false
+		}
+
+		if line.blame.Time.Before(params.commitAgeTime) {
+			log.Debugf("skipping %s line %d due to commit age", path, line)
+			return false
+		}
+	}
+	return true
 }
 
 func printResult(searchResults chan *searchResult, wgResult *sync.WaitGroup, params *searchParams) {

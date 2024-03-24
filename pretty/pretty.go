@@ -60,11 +60,14 @@ func PrettyLineNumber(number int, maxDigits int) string {
 //
 // The string if formatted according to the provided style (colorful or black-and-white).
 func PrettyFilename(path string, nComments int, style Style) string {
-	styler := baseStyle
-	if style == BWStyle {
+	var styler lipgloss.Style
+	switch style {
+	case BWStyle:
 		styler = boldStyle
-	} else if style == FullStyle {
+	case FullStyle:
 		styler = filenameColorStyle
+	default:
+		styler = baseStyle
 	}
 	fname := styler.Render(fmt.Sprintf("• %s", path))
 	var comments string
@@ -133,17 +136,13 @@ func Colorize(text string, tag string, style Style) string {
 //	[OLD John Doe]
 //
 // Color is added according to the style.
-func PrettyBlame(blame *blame.LineBlame, ageLimit int, style Style) string {
+func PrettyBlame(blame *blame.LineBlame, oldCommitTime time.Time, style Style) string {
 	blameStr := fmt.Sprintf("[%s]", blame.Author)
-	if blame.Timestamp == 0 {
+	if blame.Time.IsZero() {
 		return blameStr
 	}
-	date := time.Unix(blame.Timestamp, 0)
-	currentDate := time.Now()
 
-	diff := currentDate.Sub(date)
-	maxAge := time.Duration(ageLimit) * 24 * time.Hour
-	if diff > maxAge {
+	if blame.Time.Before(oldCommitTime) {
 		blameStr = fmt.Sprintf("[OLD %s]", blame.Author)
 		if style == FullStyle {
 			blameStr = oldCommitStyle.Render(blameStr)

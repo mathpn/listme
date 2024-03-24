@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/op/go-logging"
 )
@@ -20,11 +21,11 @@ var log = logging.MustGetLogger("listme")
 const MaxAuthorLength = 20
 
 // LineBlame contains Git blame information for a specific file line.
+//   - Time: date and time of commit
 //   - Author: author name
-//   - Timestamp: timestamp of commit
 type LineBlame struct {
-	Author    string
-	Timestamp int64
+	Time   time.Time
+	Author string
 }
 
 type GitBlame struct {
@@ -36,7 +37,7 @@ type GitBlame struct {
 func (b *GitBlame) BlameLine(line int) (*LineBlame, error) {
 	line = line - 1
 	if line < 0 || line >= len(b.blames) {
-		err := fmt.Errorf("line out of range")
+		err := fmt.Errorf("line %d out of range", line)
 		log.Info(err)
 		return nil, err
 	}
@@ -62,8 +63,9 @@ func parseGitBlame(out io.Reader) []*LineBlame {
 			if currentBlame != nil {
 				tsStr := strings.TrimPrefix(buf, "author-time ")
 				ts, err := strconv.ParseInt(tsStr, 10, 64)
+				time := time.Unix(ts, 0)
 				if err == nil {
-					currentBlame.Timestamp = ts
+					currentBlame.Time = time
 				}
 			}
 		}
