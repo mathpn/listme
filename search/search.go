@@ -32,14 +32,14 @@ const defaultWidth = 75
 const noComment = "\x1b[3m[no comment]\x1b[23m" // italic
 
 type searchParams struct {
+	oldCommitTime time.Time
+	commitAgeTime time.Time
 	matcher       matcher.Matcher
 	regex         *regexp.Regexp
 	rootPath      string
 	author        string
 	style         pretty.Style
 	workers       int
-	oldCommitTime time.Time
-	commitAgeTime time.Time
 	maxFs         int64
 	fullPath      bool
 	summary       bool
