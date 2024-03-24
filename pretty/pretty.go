@@ -142,12 +142,12 @@ func PrettyBlame(blame *blame.LineBlame, oldCommitTime time.Time, style Style) s
 		return blameStr
 	}
 
-	// if blame.Time.Before(oldCommitTime) {
-	// 	blameStr = fmt.Sprintf("[OLD %s]", blame.Author)
-	// 	if style == FullStyle {
-	// 		blameStr = oldCommitStyle.Render(blameStr)
-	// 	}
-	// }
+	if blame.Time.Before(oldCommitTime) {
+		blameStr = fmt.Sprintf("[OLD %s]", blame.Author)
+		if style == FullStyle {
+			blameStr = oldCommitStyle.Render(blameStr)
+		}
+	}
 	return blameStr
 }
 
