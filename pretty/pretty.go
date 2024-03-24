@@ -138,14 +138,13 @@ func Colorize(text string, tag string, style Style) string {
 // Color is added according to the style.
 func PrettyBlame(blame *blame.LineBlame, ageLimit int, style Style) string {
 	blameStr := fmt.Sprintf("[%s]", blame.Author)
-	if blame.Timestamp == 0 {
+	if blame.Time.IsZero() {
 		return blameStr
 	}
 	// TODO remove timestamp logic from this module
-	date := time.Unix(blame.Timestamp, 0)
 	currentDate := time.Now()
 
-	diff := currentDate.Sub(date)
+	diff := currentDate.Sub(blame.Time)
 	maxAge := time.Duration(ageLimit) * 24 * time.Hour
 	if diff > maxAge {
 		blameStr = fmt.Sprintf("[OLD %s]", blame.Author)

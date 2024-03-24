@@ -413,10 +413,9 @@ func validLine(path string, line *matchLine, params *searchParams) bool {
 		if line.blame == nil {
 			return false
 		}
-		date := time.Unix(line.blame.Timestamp, 0)
 		currentDate := time.Now()
 
-		diff := currentDate.Sub(date)
+		diff := currentDate.Sub(line.blame.Time)
 		maxAge := time.Duration(params.commitAgeFilter) * 24 * time.Hour
 		if diff > maxAge {
 			return false
