@@ -422,11 +422,12 @@ func validLine(path string, line *matchLine, params *searchParams) bool {
 	}
 	if !params.commitAgeTime.Equal(zeroTime) {
 		if line.blame == nil {
+			log.Debugf("skipping %s line %d due to commit age: no git blame", path, line)
 			return false
 		}
 
-		// TODO add debug log
 		if line.blame.Time.Before(params.commitAgeTime) {
+			log.Debugf("skipping %s line %d due to commit age", path, line)
 			return false
 		}
 	}
