@@ -369,7 +369,8 @@ func scanFile(
 	var triedBlame bool
 	var lineBlame *blame.LineBlame
 
-	requiresBlame := params.author != "" || (params.showAuthor && params.style != pretty.PlainStyle)
+	showAuthor := params.showAuthor && params.style != pretty.PlainStyle
+	requiresBlame := params.author != "" || !params.oldCommitTime.Equal(zeroTime) || showAuthor
 
 	for lineNumber := 1; scanner.Scan(); lineNumber++ {
 		text := scanner.Bytes()

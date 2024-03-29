@@ -45,20 +45,22 @@ You'll see an output like this:
 
 ![Example output screenshot](https://github.com/mathpn/listme/raw/main/screenshots/example_output.png?raw=true)
 
-`listme` respects your project's `.gitignore` files to exclude specific directories and files. If you need additional filtering, use the `--glob (-g)` option.
+`listme` respects your project's `.gitignore` files to exclude specific directories and files. If you need additional filtering, use the `--glob (-g)` option. You can also filter lines by commit author (`-a`) or by commit age in days (`-n`).
 
-Comments from commits older than a certain age (set with `--age-limit`) are tagged as old, indicating their age along with the author's name, e.g., `[OLD John Doe]`.
+Comments from commits older than a certain age (set with `--old-commit-mark-limit`) are tagged as old, indicating their age along with the author's name, e.g., `[OLD John Doe]`.
 
 ### Font and terminal support
 
-Most modern terminals support the Unicode symbols used in listme. For the best experience, we recommend using a patched font (e.g., one from **[nerd fonts](https://www.nerdfonts.com/)**).
+Most modern terminals support the Unicode symbols used in `listme`. For the best experience, we recommend using a patched font (e.g., one from **[nerd fonts](https://www.nerdfonts.com/)**).
 
-### Options
+### Arguments
 
 - **path**: Path to folder or file to be searched. Search is recursive.
 - **--tags (-T)**: Define the tags to search for, separated by spaces. Default tags include BUG, FIXME, XXX, TODO, HACK, OPTIMIZE, and NOTE.
-- **--glob (-g)**: Use a single-quoted glob pattern to filter files during the search (e.g., *.go).
-- **--age-limit (-l)**: Set the age limit for commits in days. Older commits are marked. Default: 60 days
+- **--glob (-g)**: Use a single-quoted glob pattern to filter files during the search (e.g., *.go)
+- **--author (-a)**: Filter lines by commit author
+- **--newer-than (-n)**: Filters lines based on the age of commits, showing only lines committed within the specified number of days
+- **--old-commit-mark-limit (-o)**: Sets the age limit for marking commits as old, with commits older than the specified limit being marked
 - **--max-file-size (-f)**: Maximum file size to scan (in MB). Default: 5 MB
 - **--full-path (-F)**: Print the full absolute path of files.
 - **--no-author (-A)**: Exclude Git author information.
@@ -71,7 +73,7 @@ Most modern terminals support the Unicode symbols used in listme. For the best e
 
 Choose your preferred style for output: colored (default), black-and-white (`-b`), or plain (`-p`). We recommend using the default style for the best experience.
 
-The plain style is designed for machine consumption, using a format like `file:tag:text`. If you redirect listme's output, it will automatically switch to plain style.
+The plain style is designed for machine consumption, using a format like `file:tag:text`. If you redirect `listme`'s output, it will automatically switch to plain style.
 
 ## Contributing
 
