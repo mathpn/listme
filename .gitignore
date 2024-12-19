@@ -20,5 +20,5 @@
 # Go workspace file
 go.work
 
-# Binaries folder
-bin/
+# Release folder
+release/
